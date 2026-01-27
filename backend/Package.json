@@ -1,0 +1,280 @@
+{
+  "name": "kin2-workforce-platform-backend",
+  "version": "2.5.0",
+  "description": "Enterprise AI-powered workforce management platform with 14 specialized AI agents",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:debug": "nodemon --inspect server.js",
+    "dev:docker": "docker-compose up --build",
+    "build": "npm run prisma:generate && npm run lint",
+    "build:production": "npm ci --only=production && npm run build",
+    "serve": "NODE_ENV=production node server.js",
+    "serve:cluster": "node cluster.js",
+    "test": "jest --runInBand --detectOpenHandles --forceExit",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "jest --config jest.e2e.config.js",
+    "test:integration": "jest --config jest.integration.config.js",
+    "test:unit": "jest --config jest.unit.config.js",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md,prisma}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,prisma}\"",
+    "prisma:generate": "npx prisma generate",
+    "prisma:migrate": "npx prisma migrate dev",
+    "prisma:deploy": "npx prisma migrate deploy",
+    "prisma:studio": "npx prisma studio",
+    "prisma:seed": "npx prisma db seed",
+    "prisma:reset": "npx prisma db push --force-reset && npx prisma db seed",
+    "db:backup": "node scripts/backup.js",
+    "db:restore": "node scripts/restore.js",
+    "db:migrate": "node scripts/migrate.js",
+    "security:audit": "npm audit --audit-level=high",
+    "security:update": "npm audit fix",
+    "security:check": "npx snyk test || true",
+    "docker:build": "docker build -t kin2-backend:v2.5.0 .",
+    "docker:run": "docker run -p 3000:3000 --env-file .env kin2-backend:v2.5.0",
+    "docker:compose": "docker-compose up -d",
+    "docker:compose:build": "docker-compose up --build -d",
+    "docker:compose:logs": "docker-compose logs -f",
+    "docker:compose:down": "docker-compose down",
+    "docker:compose:reset": "docker-compose down -v && docker-compose up --build -d",
+    "health:check": "node scripts/health-check.js",
+    "logs": "tail -f logs/combined.log",
+    "logs:error": "tail -f logs/error.log",
+    "logs:access": "tail -f logs/access.log",
+    "clean": "rm -rf node_modules coverage dist build",
+    "clean:install": "npm run clean && npm install",
+    "ci:setup": "npm ci && npm run prisma:generate && npm run prisma:deploy",
+    "ci:test": "npm run lint && npm run format:check && npm run test:coverage",
+    "deploy:staging": "node scripts/deploy-staging.js",
+    "deploy:production": "node scripts/deploy-production.js",
+    "backup:data": "node scripts/backup-data.js",
+    "monitor:start": "pm2 start ecosystem.config.js",
+    "monitor:stop": "pm2 stop ecosystem.config.js",
+    "monitor:restart": "pm2 restart ecosystem.config.js",
+    "monitor:logs": "pm2 logs",
+    "monitor:status": "pm2 status",
+    "monitor:delete": "pm2 delete ecosystem.config.js",
+    "docs:generate": "node scripts/generate-docs.js",
+    "docs:serve": "npx serve docs",
+    "api:docs": "node scripts/swagger-setup.js",
+    "performance:test": "artillery run artillery.yml",
+    "performance:benchmark": "node scripts/benchmark.js",
+    "email:test": "node scripts/test-email.js",
+    "ai:test": "node scripts/test-ai.js",
+    "stripe:test": "node scripts/test-stripe.js",
+    "seed:demo": "node scripts/seed-demo-data.js",
+    "seed:test": "node scripts/seed-test-data.js",
+    "reset:demo": "npm run prisma:reset && npm run seed:demo",
+    "reset:test": "npm run prisma:reset && npm run seed:test",
+    "queue:start": "node scripts/queue-worker.js",
+    "cron:start": "node scripts/cron-jobs.js"
+  },
+  "keywords": [
+    "workforce",
+    "ai",
+    "recruitment",
+    "hr-tech",
+    "job-matching",
+    "enterprise",
+    "saas",
+    "platform",
+    "kin2",
+    "artificial-intelligence",
+    "automation",
+    "hiring",
+    "talent"
+  ],
+  "author": "Kin2 Team <hello@kin2.co.uk>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kin2-co/kin2-workforce-platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kin2-co/kin2-workforce-platform/issues"
+  },
+  "homepage": "https://kin2.co.uk",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "^5.7.0",
+    "bcryptjs": "^2.4.3",
+    "bull": "^4.11.5",
+    "bull-board": "^4.4.0",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "cron": "^3.1.6",
+    "deepseek": "^1.0.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-slow-down": "^1.5.0",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "joi": "^17.11.0",
+    "jsonwebtoken": "^9.0.2",
+    "luxon": "^3.4.4",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.7",
+    "openai": "^4.28.0",
+    "pdf-parse": "^1.1.1",
+    "prisma": "^5.7.0",
+    "rate-limit-redis": "^4.1.1",
+    "redis": "^4.6.13",
+    "stripe": "^14.16.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0",
+    "ws": "^8.14.2",
+    "xlsx": "^0.18.5",
+    "yaml": "^2.3.4",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^8.4.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.7.5",
+    "@types/cookie-parser": "^1.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.11",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/morgan": "^1.9.9",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.10.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^6.4.14",
+    "@types/supertest": "^6.0.2",
+    "@types/uuid": "^9.0.7",
+    "@types/ws": "^8.5.10",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "artillery": "^2.0.11",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-jest": "^27.6.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "eslint-plugin-security": "^1.7.1",
+    "husky": "^8.0.3",
+    "jest": "^29.7.0",
+    "jest-mock-extended": "^3.0.5",
+    "lint-staged": "^15.2.0",
+    "nodemon": "^3.0.2",
+    "pm2": "^5.3.1",
+    "prettier": "^3.1.1",
+    "supertest": "^6.3.3",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.[jt]s?(x)",
+      "**/?(*.)+(spec|test).[jt]s?(x)"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.{js,ts}",
+      "!src/**/*.d.ts",
+      "!src/**/*.test.{js,ts}",
+      "!src/**/index.{js,ts}"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/src/tests/setup.js"
+    ],
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    },
+    "testTimeout": 30000
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ],
+    "*.prisma": [
+      "prettier --write"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "pre-push": "npm run test"
+    }
+  },
+  "volta": {
+    "node": "20.10.0",
+    "npm": "10.2.3"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "funding": {
+    "type": "individual",
+    "url": "https://github.com/sponsors/kin2"
+  },
+  "contributors": [
+    "Alex Johnson <alex@kin2.co.uk>",
+    "Sam Wilson <sam@kin2.co.uk>",
+    "Jordan Lee <jordan@kin2.co.uk>",
+    "Taylor Kim <taylor@kin2.co.uk>"
+  ],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "files": [
+    "server.js",
+    "src/**/*",
+    "prisma/**/*",
+    "uploads/**/*",
+    "logs/**/*",
+    "scripts/**/*",
+    "docs/**/*",
+    "ecosystem.config.js",
+    "Dockerfile",
+    "docker-compose.yml",
+    ".env.example",
+    "LICENSE",
+    "README.md"
+  ],
+  "browser": false
+}
