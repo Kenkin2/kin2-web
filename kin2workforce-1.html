@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kin2 Workforce Login | Employee & Manager Portal</title>
+    <meta name="description" content="Access your Kin2 Workforce account. View schedules, clock in/out, request time off, and manage your team. Download mobile apps for iOS and Android.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #6366F1;
+            --color-primary-dark: #4F46E5;
+            --color-primary-light: #A5B4FC;
+            --color-secondary: #EC4899;
+            --color-accent: #14B8A6;
+            --color-dark: #0F172A;
+            --color-dark-light: #1E293B;
+            --color-gray: #64748B;
+            --color-light: #F1F5F9;
+            --color-white: #FFFFFF;
+            --font-heading: 'Sora', sans-serif;
+            --font-body: 'Outfit', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            color: var(--color-white);
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(236, 72, 153, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.1) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Header */
+        header {
+            position: relative;
+            z-index: 100;
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .logo {
+            font-family: var(--font-heading);
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--color-white);
+            text-decoration: none;
+            letter-spacing: -0.03em;
+        }
+
+        .logo-gradient {
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-link {
+            color: var(--color-light);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            padding: 0.75rem 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .header-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--color-primary);
+        }
+
+        /* Main Container */
+        .container {
+            position: relative;
+            z-index: 10;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 4rem;
+            align-items: center;
+            min-height: calc(100vh - 120px);
+        }
+
+        /* Login Section */
+        .login-section {
+            animation: fadeInLeft 0.8s ease;
+        }
+
+        @keyframes fadeInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .welcome-text {
+            margin-bottom: 3rem;
+        }
+
+        .welcome-text h1 {
+            font-family: var(--font-heading);
+            font-size: 3.5rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .welcome-text p {
+            font-size: 1.2rem;
+            color: var(--color-gray);
+            line-height: 1.6;
+        }
+
+        .login-options {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .login-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .login-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--color-primary);
+            box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
+        }
+
+        .login-card:hover::before {
+            opacity: 0.1;
+        }
+
+        .login-card-content {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .login-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            flex-shrink: 0;
+        }
+
+        .login-card:nth-child(2) .login-icon {
+            background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+        }
+
+        .login-card:nth-child(3) .login-icon {
+            background: linear-gradient(135deg, var(--color-secondary), var(--color-accent));
+        }
+
+        .login-details h3 {
+            font-family: var(--font-heading);
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: var(--color-white);
+        }
+
+        .login-details p {
+            color: var(--color-gray);
+            font-size: 0.95rem;
+        }
+
+        .login-arrow {
+            margin-left: auto;
+            font-size: 1.5rem;
+            opacity: 0.5;
+            transition: all 0.3s;
+        }
+
+        .login-card:hover .login-arrow {
+            opacity: 1;
+            transform: translateX(5px);
+        }
+
+        /* Info Section */
+        .info-section {
+            animation: fadeInRight 0.8s ease 0.2s both;
+        }
+
+        @keyframes fadeInRight {
+            from {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .info-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 3rem;
+            margin-bottom: 2rem;
+        }
+
+        .info-card h2 {
+            font-family: var(--font-heading);
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            color: var(--color-white);
+        }
+
+        .feature-grid {
+            display: grid;
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 1.3rem;
+        }
+
+        .feature-content h4 {
+            font-family: var(--font-heading);
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            color: var(--color-white);
+        }
+
+        .feature-content p {
+            color: var(--color-gray);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .app-download {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2.5rem;
+            text-align: center;
+        }
+
+        .app-download h3 {
+            font-family: var(--font-heading);
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--color-white);
+        }
+
+        .app-download p {
+            color: var(--color-gray);
+            margin-bottom: 2rem;
+        }
+
+        .app-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .app-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            text-decoration: none;
+            color: var(--color-white);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.3s;
+        }
+
+        .app-button:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-3px);
+            border-color: var(--color-primary);
+        }
+
+        .app-button span {
+            font-size: 1.5rem;
+        }
+
+        /* Quick Links */
+        .quick-links {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .quick-links h4 {
+            font-family: var(--font-heading);
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--color-white);
+        }
+
+        .quick-links-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .quick-link {
+            color: var(--color-gray);
+            text-decoration: none;
+            padding: 0.75rem;
+            border-radius: 8px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .quick-link:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--color-primary-light);
+        }
+
+        /* Footer */
+        footer {
+            position: relative;
+            z-index: 10;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .footer-links a {
+            color: var(--color-gray);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s;
+        }
+
+        .footer-links a:hover {
+            color: var(--color-primary-light);
+        }
+
+        .footer-text {
+            color: var(--color-gray);
+            font-size: 0.9rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+                gap: 3rem;
+            }
+
+            .welcome-text h1 {
+                font-size: 2.8rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .welcome-text h1 {
+                font-size: 2.2rem;
+            }
+
+            .login-card-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .login-arrow {
+                display: none;
+            }
+
+            .quick-links-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .app-buttons {
+                flex-direction: column;
+            }
+        }
+
+        /* Loading Animation */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(20, 184, 166, 0.1);
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: var(--color-accent);
+            margin-bottom: 2rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--color-accent);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <a href="/" class="logo">
+            Kin2 <span class="logo-gradient">Workforce</span>
+        </a>
+        <a href="https://kin2serviceslimited.com" class="header-link">About Kin2 Services</a>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Login Section -->
+        <div class="login-section">
+            <div class="welcome-text">
+                <h1>
+                    Welcome to<br>
+                    <span class="gradient-text">Kin2 Workforce</span>
+                </h1>
+                <p>Access your workspace, manage your schedule, and stay connected with your team.</p>
+            </div>
+
+            <div class="login-options">
+                <div class="login-card" onclick="window.location.href='#employee-login'">
+                    <div class="login-card-content">
+                        <div class="login-icon">👤</div>
+                        <div class="login-details">
+                            <h3>Employee Portal</h3>
+                            <p>View schedules, clock in/out, request time off</p>
+                        </div>
+                        <div class="login-arrow">→</div>
+                    </div>
+                </div>
+
+                <div class="login-card" onclick="window.location.href='#manager-login'">
+                    <div class="login-card-content">
+                        <div class="login-icon">👥</div>
+                        <div class="login-details">
+                            <h3>Manager Portal</h3>
+                            <p>Create schedules, approve requests, manage teams</p>
+                        </div>
+                        <div class="login-arrow">→</div>
+                    </div>
+                </div>
+
+                <div class="login-card" onclick="window.location.href='#admin-login'">
+                    <div class="login-card-content">
+                        <div class="login-icon">⚙️</div>
+                        <div class="login-details">
+                            <h3>Admin Portal</h3>
+                            <p>Full system access and configuration</p>
+                        </div>
+                        <div class="login-arrow">→</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Section -->
+        <div class="info-section">
+            <div class="info-card">
+                <div class="status-indicator">
+                    <span class="status-dot"></span>
+                    All Systems Operational
+                </div>
+
+                <h2>Platform Features</h2>
+                <div class="feature-grid">
+                    <div class="feature-item">
+                        <div class="feature-icon">📅</div>
+                        <div class="feature-content">
+                            <h4>Smart Scheduling</h4>
+                            <p>Access your schedule anytime, swap shifts, and stay updated</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">⏰</div>
+                        <div class="feature-content">
+                            <h4>Time Tracking</h4>
+                            <p>Clock in/out with GPS verification and view timesheets</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">📱</div>
+                        <div class="feature-content">
+                            <h4>Mobile First</h4>
+                            <p>Full-featured apps for iOS and Android devices</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">📊</div>
+                        <div class="feature-content">
+                            <h4>Real-time Insights</h4>
+                            <p>Track hours, monitor attendance, and analyze performance</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="app-download">
+                <h3>Get the Mobile App</h3>
+                <p>Download Kin2 Workforce for iOS or Android</p>
+                <div class="app-buttons">
+                    <a href="#" class="app-button">
+                        <span>🍎</span>
+                        <div style="text-align: left;">
+                            <div style="font-size: 0.7rem; opacity: 0.7;">Download on the</div>
+                            <div style="font-size: 1rem;">App Store</div>
+                        </div>
+                    </a>
+                    <a href="#" class="app-button">
+                        <span>🤖</span>
+                        <div style="text-align: left;">
+                            <div style="font-size: 0.7rem; opacity: 0.7;">Get it on</div>
+                            <div style="font-size: 1rem;">Google Play</div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="quick-links">
+                <h4>Quick Links</h4>
+                <div class="quick-links-grid">
+                    <a href="#" class="quick-link">📚 Help Center</a>
+                    <a href="#" class="quick-link">🎥 Video Tutorials</a>
+                    <a href="#" class="quick-link">💬 Support Chat</a>
+                    <a href="#" class="quick-link">📊 System Status</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-text">
+                &copy; 2026 Kin2 Services Limited. Powered by Kin2 Workforce.
+            </div>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">Security</a>
+                <a href="mailto:support@kin2workforce.com">Support</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Add smooth scroll behavior
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+
+        // Add hover effect to login cards
+        const loginCards = document.querySelectorAll('.login-card');
+        loginCards.forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-8px) scale(1.02)';
+            });
+            card.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0) scale(1)';
+            });
+        });
+    </script>
+</body>
+</html>

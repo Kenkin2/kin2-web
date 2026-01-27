@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us | Kin2 Services Limited</title>
+    <meta name="description" content="Get in touch with Kin2 Services Limited. Sales inquiries, customer support, and demo requests available.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-navy: #0A1128;
+            --color-navy-light: #1C2541;
+            --color-teal: #00B4D8;
+            --color-teal-light: #90E0EF;
+            --color-cream: #F8F9FA;
+            --color-sand: #E8E2D9;
+            --font-display: 'Crimson Pro', serif;
+            --font-body: 'DM Sans', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--color-cream);
+            color: var(--color-navy);
+            line-height: 1.6;
+        }
+
+        header {
+            background: rgba(248, 249, 250, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1.2rem 2rem;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            border-bottom: 1px solid rgba(0, 180, 216, 0.1);
+        }
+
+        nav {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--color-navy);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--color-teal);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2.5rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--color-navy);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--color-teal);
+        }
+
+        .hero-contact {
+            margin-top: 80px;
+            padding: 5rem 2rem 3rem;
+            text-align: center;
+        }
+
+        .hero-contact h1 {
+            font-family: var(--font-display);
+            font-size: 4rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--color-navy);
+        }
+
+        .hero-contact p {
+            font-size: 1.3rem;
+            color: var(--color-navy-light);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .contact-container {
+            max-width: 1200px;
+            margin: 4rem auto;
+            padding: 0 2rem;
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 4rem;
+        }
+
+        .contact-info {
+            background: white;
+            padding: 3rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(10, 17, 40, 0.08);
+        }
+
+        .contact-info h2 {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            color: var(--color-navy);
+        }
+
+        .contact-method {
+            margin-bottom: 2.5rem;
+        }
+
+        .contact-method h3 {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--color-navy);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .contact-method .icon {
+            font-size: 1.5rem;
+        }
+
+        .contact-method p {
+            color: var(--color-navy-light);
+            margin-left: 2.25rem;
+        }
+
+        .contact-method a {
+            color: var(--color-teal);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .contact-method a:hover {
+            text-decoration: underline;
+        }
+
+        .contact-form {
+            background: white;
+            padding: 3rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(10, 17, 40, 0.08);
+        }
+
+        .contact-form h2 {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            color: var(--color-navy);
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--color-navy);
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 2px solid var(--color-sand);
+            border-radius: 8px;
+            font-family: var(--font-body);
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--color-teal);
+        }
+
+        .form-group textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .submit-button {
+            background: var(--color-teal);
+            color: white;
+            padding: 1rem 2.5rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 6px 20px rgba(0, 180, 216, 0.25);
+        }
+
+        .submit-button:hover {
+            background: var(--color-navy);
+            transform: translateY(-3px);
+        }
+
+        footer {
+            background: var(--color-navy);
+            color: rgba(255, 255, 255, 0.8);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .contact-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .hero-contact h1 {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/" class="logo">Kin2<span>Services</span></a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/about.html">About</a>
+                <a href="/#pricing">Pricing</a>
+                <a href="https://kin2workforce.com">Platform Login</a>
+            </div>
+        </nav>
+    </header>
+
+    <section class="hero-contact">
+        <h1>Get in Touch</h1>
+        <p>We're here to help. Reach out anytime.</p>
+    </section>
+
+    <div class="contact-container">
+        <div class="contact-info">
+            <h2>Contact Information</h2>
+            
+            <div class="contact-method">
+                <h3><span class="icon">📧</span> Email</h3>
+                <p><strong>Sales:</strong><br><a href="mailto:sales@kin2serviceslimited.com">sales@kin2serviceslimited.com</a></p>
+                <p style="margin-top: 1rem;"><strong>Support:</strong><br><a href="mailto:support@kin2serviceslimited.com">support@kin2serviceslimited.com</a></p>
+            </div>
+
+            <div class="contact-method">
+                <h3><span class="icon">📞</span> Phone</h3>
+                <p><a href="tel:+442012345678">+44 (0) 20 1234 5678</a></p>
+                <p style="font-size: 0.9rem; margin-top: 0.5rem;">Monday-Friday, 9:00-17:00 GMT</p>
+            </div>
+
+            <div class="contact-method">
+                <h3><span class="icon">📍</span> Office</h3>
+                <p>
+                    Kin2 Services Limited<br>
+                    123 Business Street<br>
+                    London, EC1A 1BB<br>
+                    United Kingdom
+                </p>
+            </div>
+
+            <div class="contact-method">
+                <h3><span class="icon">⏰</span> Business Hours</h3>
+                <p>
+                    Monday - Friday: 9:00 - 17:00 GMT<br>
+                    Saturday - Sunday: Closed
+                </p>
+            </div>
+        </div>
+
+        <div class="contact-form">
+            <h2>Send Us a Message</h2>
+            <form id="contactForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="name">Name *</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email *</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="company">Company</label>
+                        <input type="text" id="company" name="company">
+                    </div>
+                    <div class="form-group">
+                        <label for="phone">Phone</label>
+                        <input type="tel" id="phone" name="phone">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="employees">Number of Employees</label>
+                    <select id="employees" name="employees">
+                        <option value="">Select range</option>
+                        <option value="1-25">1-25</option>
+                        <option value="26-100">26-100</option>
+                        <option value="101-500">101-500</option>
+                        <option value="500+">500+</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="message">Message *</label>
+                    <textarea id="message" name="message" required></textarea>
+                </div>
+
+                <button type="submit" class="submit-button">Send Message</button>
+            </form>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Kin2 Services Limited. All rights reserved. | Powered by Kin2 Workforce</p>
+    </footer>
+
+    <script>
+        document.getElementById('contactForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('Thank you for your message! We will get back to you soon.');
+            this.reset();
+        });
+    </script>
+</body>
+</html>

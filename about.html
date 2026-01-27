@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Kin2 Services Limited | Our Mission & Team</title>
+    <meta name="description" content="Learn about Kin2 Services Limited, our mission to simplify workforce management, and the team behind our innovative platform.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-navy: #0A1128;
+            --color-navy-light: #1C2541;
+            --color-teal: #00B4D8;
+            --color-teal-light: #90E0EF;
+            --color-cream: #F8F9FA;
+            --color-sand: #E8E2D9;
+            --color-orange: #F4A261;
+            --font-display: 'Crimson Pro', serif;
+            --font-body: 'DM Sans', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--color-cream);
+            color: var(--color-navy);
+            line-height: 1.6;
+        }
+
+        header {
+            background: rgba(248, 249, 250, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1.2rem 2rem;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            border-bottom: 1px solid rgba(0, 180, 216, 0.1);
+        }
+
+        nav {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--color-navy);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--color-teal);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2.5rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--color-navy);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--color-teal);
+        }
+
+        .hero-about {
+            margin-top: 80px;
+            padding: 6rem 2rem;
+            background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-navy-light) 100%);
+            color: white;
+            text-align: center;
+        }
+
+        .hero-about h1 {
+            font-family: var(--font-display);
+            font-size: 4rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-about p {
+            font-size: 1.4rem;
+            max-width: 800px;
+            margin: 0 auto;
+            opacity: 0.9;
+        }
+
+        .content-section {
+            max-width: 1200px;
+            margin: 6rem auto;
+            padding: 0 2rem;
+        }
+
+        .story-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+            margin-bottom: 6rem;
+        }
+
+        .story-text h2 {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            color: var(--color-navy);
+        }
+
+        .story-text p {
+            font-size: 1.15rem;
+            color: var(--color-navy-light);
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+        }
+
+        .story-visual {
+            background: linear-gradient(135deg, var(--color-teal-light), var(--color-teal));
+            border-radius: 20px;
+            height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8rem;
+        }
+
+        .values-section {
+            background: white;
+            padding: 6rem 2rem;
+        }
+
+        .values-grid {
+            max-width: 1200px;
+            margin: 3rem auto 0;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 3rem;
+        }
+
+        .value-card {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .value-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--color-teal), var(--color-teal-light));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            margin: 0 auto 2rem;
+        }
+
+        .value-card h3 {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--color-navy);
+        }
+
+        .value-card p {
+            color: var(--color-navy-light);
+            font-size: 1.05rem;
+        }
+
+        .cta-section {
+            padding: 6rem 2rem;
+            background: var(--color-sand);
+            text-align: center;
+        }
+
+        .cta-section h2 {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--color-navy);
+            margin-bottom: 2rem;
+        }
+
+        .btn-primary {
+            display: inline-block;
+            background: var(--color-teal);
+            color: white;
+            padding: 1rem 2.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s;
+            box-shadow: 0 6px 20px rgba(0, 180, 216, 0.25);
+        }
+
+        .btn-primary:hover {
+            background: var(--color-navy);
+            transform: translateY(-3px);
+        }
+
+        footer {
+            background: var(--color-navy);
+            color: rgba(255, 255, 255, 0.8);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .story-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .values-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .hero-about h1 {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/" class="logo">Kin2<span>Services</span></a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/about.html">About</a>
+                <a href="/#pricing">Pricing</a>
+                <a href="https://kin2workforce.com">Platform Login</a>
+            </div>
+        </nav>
+    </header>
+
+    <section class="hero-about">
+        <h1>About Kin2 Services Limited</h1>
+        <p>Empowering businesses through innovative workforce management solutions</p>
+    </section>
+
+    <div class="content-section">
+        <div class="story-grid">
+            <div class="story-text">
+                <h2>Our Story</h2>
+                <p>Founded with a vision to eliminate the complexity of workforce management, Kin2 Services Limited has become a trusted partner for businesses seeking efficiency, compliance, and growth.</p>
+                <p>We recognized that traditional workforce management tools were either too complex, too expensive, or too limited for the needs of modern businesses. So we built something better.</p>
+                <p>Today, the Kin2 Workforce platform serves thousands of employees across multiple industries, helping organizations save time, reduce costs, and stay compliant with ever-changing regulations.</p>
+            </div>
+            <div class="story-visual">
+                🚀
+            </div>
+        </div>
+    </div>
+
+    <section class="values-section">
+        <div class="content-section">
+            <h2 style="text-align: center; font-family: var(--font-display); font-size: 3rem; margin-bottom: 1rem;">Our Values</h2>
+            <p style="text-align: center; color: var(--color-navy-light); font-size: 1.2rem; max-width: 700px; margin: 0 auto 3rem;">What drives us every day</p>
+            
+            <div class="values-grid">
+                <div class="value-card">
+                    <div class="value-icon">💡</div>
+                    <h3>Innovation</h3>
+                    <p>We continuously evolve our platform to meet the changing needs of modern workplaces.</p>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">✨</div>
+                    <h3>Simplicity</h3>
+                    <p>Complex problems deserve elegant solutions. We make workforce management intuitive.</p>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">🛡️</div>
+                    <h3>Integrity</h3>
+                    <p>We protect your data, respect your privacy, and operate with complete transparency.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <h2>Ready to Get Started?</h2>
+        <p style="font-size: 1.2rem; color: var(--color-navy-light); margin-bottom: 2rem;">Join thousands of businesses using Kin2 Workforce</p>
+        <a href="/#pricing" class="btn-primary">Start Your Free Trial</a>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 Kin2 Services Limited. All rights reserved. | Powered by Kin2 Workforce</p>
+    </footer>
+</body>
+</html>
