@@ -4,560 +4,486 @@
  * █▀▀ █░█ █▄░█ █▀▀ ░░█ █▀ ▀█▀ █▀▀ █▀█ █ █▄░█ █▀▀
  * █▄▄ █▄█ █░▀█ █▀░ █▄█ ▄█ ░█░ ██▄ █▀▄ █ █░▀█ █▄█
  * Kin2 Workforce Platform - Production Server v2.5.0
- * Enterprise-Grade AI-Powered Workforce Management
+ * Main server entry point with service initialization
  */
 
 // ======================================================
-// 1. ENVIRONMENT VALIDATION
-// ======================================================
-require('dotenv').config({ path: `.env.${process.env.NODE_ENV || 'development'}` });
-
-// Check for required environment variables
-const requiredEnvVars = [
-  'NODE_ENV',
-  'PORT',
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'JWT_REFRESH_SECRET',
-  'APP_URL',
-  'API_URL',
-  'CORS_ORIGIN'
-];
-
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
-if (missingEnvVars.length > 0) {
-  console.error('❌ Missing required environment variables:');
-  missingEnvVars.forEach(envVar => console.error(`   - ${envVar}`));
-  console.error('\nPlease check your .env file');
-  process.exit(1);
-}
-
-// Feature flags
-const FEATURES = {
-  AI_AGENTS: process.env.ENABLE_AI_AGENTS === 'true',
-  EMAIL_NOTIFICATIONS: process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true',
-  PAYMENTS: process.env.ENABLE_PAYMENTS === 'true',
-  KFN_SCORING: process.env.ENABLE_KFN_SCORING === 'true'
-};
-// ======================================================
-// 2. LOGGER INITIALIZATION
+// 1. ENVIRONMENT LOADING
 // ======================================================
 
-// Initialize logger early
-const { systemLogger, requestLogger, securityLogger } = require('./src/utils/logger');
-
-// Log startup info
-systemLogger.info(`============================================`);
-systemLogger.info(`Kin2 Workforce Platform v2.5.0`);
-systemLogger.info(`Starting in ${envLoader.isProduction() ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
-systemLogger.info(`Port: ${envLoader.get('PORT')}`);
-systemLogger.info(`API URL: ${envLoader.get('API_URL')}`);
-systemLogger.info(`CORS Origin: ${envLoader.get('CORS_ORIGIN')}`);
-systemLogger.info(`============================================`);
-// Log environment info
-systemLogger.info(`🚀 Starting in ${envLoader.isProduction() ? 'PRODUCTION' : envLoader.isDevelopment() ? 'DEVELOPMENT' : envLoader.env.toUpperCase()} mode`);
-systemLogger.info(`🔧 Features: AI=${FEATURES.AI_AGENTS}, Email=${FEATURES.EMAIL_NOTIFICATIONS}, Payments=${FEATURES.PAYMENTS}`);
-
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
-if (missingEnvVars.length > 0) {
-  console.error('❌ Missing required environment variables:');
-  missingEnvVars.forEach(envVar => console.error(`   - ${envVar}`));
-  console.error('\nPlease check your .env file');
-  process.exit(1);
-}
-
-// Feature flags
-const FEATURES = {
-  AI_AGENTS: process.env.ENABLE_AI_AGENTS === 'true',
-  EMAIL_NOTIFICATIONS: process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true',
-  PAYMENTS: process.env.ENABLE_PAYMENTS === 'true',
-  KFN_SCORING: process.env.ENABLE_KFN_SCORING === 'true'
-};
+// Load environment with our custom loader
+const envLoader = require('./src/utils/env-loader');
+envLoader.load();
 
 // ======================================================
 // 2. IMPORTS
 // ======================================================
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-const slowDown = require('express-slow-down');
-const morgan = require('morgan');
-const cookieParser = require('cookie-parser');
+
+const { createApp } = require('./src/app');
 const { PrismaClient } = require('@prisma/client');
 const redis = require('redis');
-const swaggerUi = require('swagger-ui-express');
-const swaggerJsdoc = require('swagger-jsdoc');
+const { createClient } = require('redis');
+const WebSocket = require('ws');
+const http = require('http');
+const cluster = require('cluster');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 
-// Custom middleware and utilities
-const { errorHandler } = require('./src/middleware/errorHandler');
-const { notFoundHandler } = require('./src/middleware/notFoundHandler');
-const { requestLogger, systemLogger, securityLogger } = require('./src/utils/logger');
+// Custom utilities
+const { systemLogger, securityLogger } = require('./src/utils/logger');
+const { scheduleJobs } = require('./src/services/background/scheduler');
 
 // ======================================================
-// 3. INITIALIZE SERVICES
+// 3. SERVICE INITIALIZATION
 // ======================================================
-const app = express();
-const prisma = new PrismaClient();
 
-// Initialize Redis if configured
-let redisClient = null;
-if (process.env.REDIS_URL) {
-  redisClient = redis.createClient({
-    url: process.env.REDIS_URL,
-    socket: {
-      reconnectStrategy: (retries) => Math.min(retries * 50, 2000)
-    }
-  });
+/**
+ * Initialize all external services
+ */
+async function initializeServices() {
+  const services = {};
+  const errors = [];
+  
+  systemLogger.info('🚀 Initializing services...');
 
-  redisClient.on('error', (err) => {
-    systemLogger.error('Redis connection error:', err);
-  });
-
-  redisClient.on('connect', () => {
-    systemLogger.info('✅ Redis connected successfully');
-  });
-}
-
-// ======================================================
-// 4. DATABASE HEALTH CHECK
-// ======================================================
-async function checkDatabaseConnection() {
+  // 1. Initialize Prisma (Database)
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    systemLogger.info('✅ Database connection established');
-    return true;
+    services.prisma = new PrismaClient({
+      log: process.env.NODE_ENV === 'development' 
+        ? ['query', 'info', 'warn', 'error']
+        : ['warn', 'error'],
+      errorFormat: 'pretty'
+    });
+    
+    // Test database connection
+    await services.prisma.$connect();
+    systemLogger.info('✅ Prisma (Database) connected successfully');
   } catch (error) {
-    systemLogger.error('❌ Database connection failed:', error.message);
-    
-    // Attempt to create database if it doesn't exist (development only)
-    if (process.env.NODE_ENV === 'development') {
-      systemLogger.warn('Attempting to create database...');
-      try {
-        const { execSync } = require('child_process');
-        execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
-        systemLogger.info('✅ Database created and seeded');
-        return true;
-      } catch (dbError) {
-        systemLogger.error('❌ Failed to create database:', dbError.message);
-      }
-    }
-    return false;
+    errors.push(`Database: ${error.message}`);
+    systemLogger.error('❌ Failed to connect to database:', error.message);
   }
-}
 
-// ======================================================
-// 5. SECURITY MIDDLEWARE
-// ======================================================
-
-// Custom security headers
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:", "http:"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      connectSrc: ["'self'", process.env.API_URL, "https://api.deepseek.com", "https://api.stripe.com"]
-    }
-  },
-  crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
-
-// CORS Configuration
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = process.env.CORS_ORIGIN.split(',');
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      securityLogger.warn(`Blocked CORS request from origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-API-Key']
-};
-app.use(cors(corsOptions));
-
-// ======================================================
-// 6. RATE LIMITING
-// ======================================================
-
-// General rate limiter for all requests
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
-  skip: (req) => req.ip === '127.0.0.1' // Skip for localhost in development
-});
-
-// Slower down for authentication endpoints
-const authSpeedLimiter = slowDown({
-  windowMs: 15 * 60 * 1000,
-  delayAfter: 5,
-  delayMs: 100
-});
-
-// Apply rate limiting
-app.use('/api/', globalLimiter);
-app.use('/api/auth/', authSpeedLimiter);
-
-// ======================================================
-// 7. REQUEST PARSING & LOGGING
-// ======================================================
-
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(cookieParser());
-
-// Compression
-app.use(compression({ level: 6 }));
-
-// Morgan logging configuration
-const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
-const morganStream = {
-  write: (message) => requestLogger.info(message.trim())
-};
-app.use(morgan(morganFormat, { stream: morganStream }));
-
-// Request ID middleware
-app.use((req, res, next) => {
-  req.id = Date.now().toString(36) + Math.random().toString(36).substr(2);
-  req.startTime = Date.now();
-  next();
-});
-
-// ======================================================
-// 8. STATIC FILES
-// ======================================================
-
-// Serve uploaded files
-if (fs.existsSync(path.join(__dirname, 'uploads'))) {
-  app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-    maxAge: '7d',
-    setHeaders: (res, filePath) => {
-      // Security headers for uploaded files
-      res.set('X-Content-Type-Options', 'nosniff');
-      
-      // Don't cache sensitive files
-      if (filePath.includes('resumes') || filePath.includes('private')) {
-        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-      }
-    }
-  }));
-}
-
-// Serve API documentation
-app.use('/api-docs', express.static(path.join(__dirname, 'docs')));
-
-// ======================================================
-// 9. SWAGGER/OPENAPI DOCUMENTATION
-// ======================================================
-
-const swaggerOptions = {
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'Kin2 Workforce Platform API',
-      version: '2.5.0',
-      description: 'Enterprise AI-powered workforce management platform',
-      contact: {
-        name: 'Kin2 Support',
-        email: 'support@kin2.co.uk',
-        url: 'https://kin2.co.uk'
-      },
-      license: {
-        name: 'MIT',
-        url: 'https://opensource.org/licenses/MIT'
-      }
-    },
-    servers: [
-      {
-        url: process.env.API_URL || 'http://localhost:3000',
-        description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server'
-      }
-    ],
-    components: {
-      securitySchemes: {
-        BearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT'
-        },
-        ApiKeyAuth: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'X-API-Key'
+  // 2. Initialize Redis (Cache & Sessions)
+  if (process.env.REDIS_URL) {
+    try {
+      services.redisClient = createClient({
+        url: process.env.REDIS_URL,
+        password: process.env.REDIS_PASSWORD,
+        socket: {
+          tls: process.env.REDIS_TLS === 'true',
+          reconnectStrategy: (retries) => {
+            if (retries > 10) {
+              systemLogger.error('❌ Redis reconnection failed after 10 attempts');
+              return new Error('Max reconnection attempts exceeded');
+            }
+            return Math.min(retries * 100, 3000);
+          }
         }
+      });
+
+      services.redisClient.on('error', (err) => {
+        systemLogger.error('Redis client error:', err);
+      });
+
+      services.redisClient.on('connect', () => {
+        systemLogger.info('✅ Redis connected successfully');
+      });
+
+      services.redisClient.on('reconnecting', () => {
+        systemLogger.warn('Redis reconnecting...');
+      });
+
+      await services.redisClient.connect();
+    } catch (error) {
+      errors.push(`Redis: ${error.message}`);
+      systemLogger.error('❌ Failed to connect to Redis:', error.message);
+      services.redisClient = null;
+    }
+  } else {
+    systemLogger.warn('⚠️  Redis URL not configured, skipping Redis initialization');
+    services.redisClient = null;
+  }
+
+  // 3. Initialize Stripe (Payments)
+  if (process.env.STRIPE_SECRET_KEY && process.env.ENABLE_PAYMENTS === 'true') {
+    try {
+      const Stripe = require('stripe');
+      services.stripe = Stripe(process.env.STRIPE_SECRET_KEY, {
+        apiVersion: '2023-10-16',
+        maxNetworkRetries: 3,
+        timeout: 30000,
+        telemetry: false
+      });
+      
+      // Test Stripe connection
+      await services.stripe.balance.retrieve();
+      systemLogger.info('✅ Stripe connected successfully');
+    } catch (error) {
+      errors.push(`Stripe: ${error.message}`);
+      systemLogger.error('❌ Failed to initialize Stripe:', error.message);
+      services.stripe = null;
+    }
+  }
+
+  // 4. Initialize Email Service
+  if (process.env.SMTP_HOST && process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true') {
+    try {
+      const nodemailer = require('nodemailer');
+      services.emailTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        },
+        pool: true,
+        maxConnections: 5,
+        maxMessages: 100
+      });
+
+      // Verify connection configuration
+      await services.emailTransporter.verify();
+      systemLogger.info('✅ Email service configured successfully');
+    } catch (error) {
+      errors.push(`Email: ${error.message}`);
+      systemLogger.error('❌ Failed to initialize email service:', error.message);
+      services.emailTransporter = null;
+    }
+  }
+
+  // 5. Initialize AI Services
+  if (process.env.DEEPSEEK_API_KEY && process.env.ENABLE_AI_AGENTS === 'true') {
+    try {
+      const { initializeAI } = require('./src/services/ai');
+      services.ai = await initializeAI();
+      systemLogger.info('✅ AI services initialized successfully');
+    } catch (error) {
+      errors.push(`AI: ${error.message}`);
+      systemLogger.error('❌ Failed to initialize AI services:', error.message);
+      services.ai = null;
+    }
+  }
+
+  // 6. Initialize File Storage
+  services.storage = {
+    local: {
+      uploadsDir: path.join(process.cwd(), 'uploads'),
+      tempDir: path.join(process.cwd(), 'uploads/temp'),
+      ensureDirectories: () => {
+        const dirs = [services.storage.local.uploadsDir, services.storage.local.tempDir];
+        dirs.forEach(dir => {
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+        });
       }
-    },
-    security: [{
-      BearerAuth: []
-    }]
-  },
-  apis: [
-    './src/routes/*.js',
-    './src/controllers/*.js',
-    './src/services/**/*.js'
-  ]
-};
-
-const swaggerSpec = swaggerJsdoc(swaggerOptions);
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-// ======================================================
-// 10. HEALTH CHECK ENDPOINTS
-// ======================================================
-
-// Basic health check
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    nodeVersion: process.version,
-    environment: process.env.NODE_ENV,
-    features: FEATURES
-  });
-});
-
-// Detailed health check
-app.get('/health/detailed', async (req, res) => {
-  const healthCheck = {
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: {}
+    }
   };
 
-  // Check database
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    healthCheck.services.database = { status: 'healthy', latency: Date.now() - req.startTime + 'ms' };
-  } catch (error) {
-    healthCheck.services.database = { status: 'unhealthy', error: error.message };
-    healthCheck.status = 'degraded';
-  }
+  // Ensure upload directories exist
+  services.storage.local.ensureDirectories();
 
-  // Check Redis
-  if (redisClient) {
+  // 7. Initialize Bull Queue (Background Jobs)
+  if (services.redisClient) {
     try {
-      await redisClient.ping();
-      healthCheck.services.redis = { status: 'healthy' };
+      const Queue = require('bull');
+      const { setupQueues } = require('./src/services/background/queues');
+      services.queues = await setupQueues(services.redisClient);
+      systemLogger.info('✅ Background queues initialized');
     } catch (error) {
-      healthCheck.services.redis = { status: 'unhealthy', error: error.message };
-      healthCheck.status = 'degraded';
+      errors.push(`Queues: ${error.message}`);
+      systemLogger.error('❌ Failed to initialize background queues:', error.message);
+      services.queues = null;
     }
   }
 
-  // Check external services (if configured)
-  if (process.env.DEEPSEEK_API_KEY) {
-    healthCheck.services.ai = { status: 'configured' };
+  // Log initialization results
+  if (errors.length > 0) {
+    systemLogger.warn(`⚠️  Some services failed to initialize: ${errors.length} error(s)`);
+    errors.forEach((error, index) => {
+      systemLogger.warn(`  ${index + 1}. ${error}`);
+    });
+  } else {
+    systemLogger.info('🎉 All services initialized successfully');
   }
 
-  if (process.env.STRIPE_SECRET_KEY) {
-    healthCheck.services.payments = { status: 'configured' };
+  return services;
+}
+
+// ======================================================
+// 4. SERVER CREATION & CONFIGURATION
+// ======================================================
+
+/**
+ * Create and configure HTTP/WebSocket server
+ */
+async function createServer(app, services) {
+  const PORT = process.env.PORT || 3000;
+  const HOST = process.env.HOST || '0.0.0.0';
+  
+  let server;
+  let wss = null;
+
+  // Create HTTP server
+  server = http.createServer(app);
+
+  // Initialize WebSocket server if enabled
+  if (process.env.ENABLE_WEBSOCKETS === 'true' && services.redisClient) {
+    try {
+      wss = new WebSocket.Server({ 
+        server,
+        path: '/ws',
+        clientTracking: true,
+        maxPayload: 1048576, // 1MB
+        perMessageDeflate: {
+          zlibDeflateOptions: {
+            chunkSize: 1024,
+            memLevel: 7,
+            level: 3
+          },
+          zlibInflateOptions: {
+            chunkSize: 10 * 1024
+          },
+          clientNoContextTakeover: true,
+          serverNoContextTakeover: true,
+          serverMaxWindowBits: 10,
+          concurrencyLimit: 10,
+          threshold: 1024
+        }
+      });
+
+      // Initialize WebSocket handlers
+      const { initializeWebSocket } = require('./src/services/notification/webSocketService');
+      initializeWebSocket(wss, services.redisClient);
+      
+      services.wss = wss;
+      systemLogger.info('✅ WebSocket server initialized');
+    } catch (error) {
+      systemLogger.error('❌ Failed to initialize WebSocket server:', error.message);
+    }
   }
 
-  res.status(healthCheck.status === 'healthy' ? 200 : 503).json(healthCheck);
-});
+  // Configure server timeouts
+  server.keepAliveTimeout = 65000; // 65 seconds
+  server.headersTimeout = 66000; // 66 seconds
+  server.requestTimeout = 30000; // 30 seconds
 
-// ======================================================
-// 11. API ROUTES
-// ======================================================
+  // Graceful shutdown handlers
+  setupGracefulShutdown(server, services, wss);
 
-// Import route modules
-const authRoutes = require('./src/routes/auth.routes');
-const userRoutes = require('./src/routes/user.routes');
-const employerRoutes = require('./src/routes/employer.routes');
-const workerRoutes = require('./src/routes/worker.routes');
-const jobRoutes = require('./src/routes/job.routes');
-const applicationRoutes = require('./src/routes/application.routes');
-const aiRoutes = require('./src/routes/ai.routes');
-const kfnRoutes = require('./src/routes/kfn.routes');
-const paymentRoutes = require('./src/routes/payment.routes');
-const notificationRoutes = require('./src/routes/notification.routes');
-const analyticsRoutes = require('./src/routes/analytics.routes');
-const adminRoutes = require('./src/routes/admin.routes');
-
-// Mount routes with versioning
-const API_VERSION = 'v1';
-const apiBase = `/api/${API_VERSION}`;
-
-// Public routes
-app.use(`${apiBase}/auth`, authRoutes);
-app.use(`${apiBase}/health`, (req, res) => res.json({ status: 'ok' }));
-
-// Protected routes (with auth middleware)
-const { verifyToken, checkRole } = require('./src/middleware/auth');
-
-// User routes (authenticated)
-app.use(`${apiBase}/users`, verifyToken, userRoutes);
-
-// Role-based routes
-app.use(`${apiBase}/employers`, verifyToken, checkRole(['EMPLOYER', 'ADMIN']), employerRoutes);
-app.use(`${apiBase}/workers`, verifyToken, checkRole(['WORKER', 'ADMIN']), workerRoutes);
-
-// Job marketplace (mixed access)
-app.use(`${apiBase}/jobs`, jobRoutes); // Some endpoints public, some protected
-app.use(`${apiBase}/applications`, verifyToken, applicationRoutes);
-
-// AI routes (protected, rate limited)
-const aiLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: process.env.NODE_ENV === 'development' ? 1000 : 50, // 50 AI calls per hour per IP
-  message: { error: 'Too many AI requests, please try again later.' }
-});
-
-app.use(`${apiBase}/ai`, verifyToken, aiLimiter, aiRoutes);
-app.use(`${apiBase}/kfn`, verifyToken, kfnRoutes);
-
-// Payment routes
-if (FEATURES.PAYMENTS) {
-  app.use(`${apiBase}/payments`, verifyToken, paymentRoutes);
-  
-  // Stripe webhook needs raw body
-  app.post('/stripe-webhook', 
-    express.raw({ type: 'application/json' }),
-    require('./src/routes/payment.routes').handleStripeWebhook
-  );
+  return { server, wss };
 }
 
-// Notification routes
-if (FEATURES.EMAIL_NOTIFICATIONS) {
-  app.use(`${apiBase}/notifications`, verifyToken, notificationRoutes);
-}
-
-// Analytics routes
-app.use(`${apiBase}/analytics`, verifyToken, checkRole(['EMPLOYER', 'ADMIN']), analyticsRoutes);
-
-// Admin routes
-app.use(`${apiBase}/admin`, verifyToken, checkRole(['ADMIN']), adminRoutes);
-
 // ======================================================
-// 12. WEBSOCKET SETUP (FOR REAL-TIME UPDATES)
+// 5. GRACEFUL SHUTDOWN
 // ======================================================
 
-let wss = null;
-if (process.env.ENABLE_WEBSOCKETS === 'true') {
-  const WebSocket = require('ws');
-  const http = require('http');
-  const server = http.createServer(app);
-  
-  wss = new WebSocket.Server({ 
-    server,
-    path: '/ws',
-    clientTracking: true
+/**
+ * Setup graceful shutdown handlers
+ */
+function setupGracefulShutdown(server, services, wss) {
+  const shutdown = async (signal) => {
+    systemLogger.info(`\n${signal} received. Starting graceful shutdown...`);
+    
+    // 1. Stop accepting new connections
+    server.close(() => {
+      systemLogger.info('✅ HTTP server closed');
+    });
+
+    // 2. Close WebSocket connections
+    if (wss) {
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.close(1001, 'Server shutting down');
+        }
+      });
+      wss.close(() => {
+        systemLogger.info('✅ WebSocket server closed');
+      });
+    }
+
+    // 3. Close background queues
+    if (services.queues) {
+      await Promise.all(
+        Object.values(services.queues).map(queue => queue.close())
+      );
+      systemLogger.info('✅ Background queues closed');
+    }
+
+    // 4. Close database connections
+    if (services.prisma) {
+      await services.prisma.$disconnect();
+      systemLogger.info('✅ Database connections closed');
+    }
+
+    // 5. Close Redis connections
+    if (services.redisClient) {
+      await services.redisClient.quit();
+      systemLogger.info('✅ Redis connections closed');
+    }
+
+    // 6. Close other services
+    if (services.emailTransporter) {
+      services.emailTransporter.close();
+      systemLogger.info('✅ Email transporter closed');
+    }
+
+    // 7. Exit process
+    systemLogger.info('👋 Shutdown complete. Goodbye!');
+    process.exit(0);
+  };
+
+  // Handle termination signals
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error) => {
+    systemLogger.error('❌ Uncaught Exception:', error);
+    // Don't exit in production, let the process manager restart
+    if (process.env.NODE_ENV !== 'production') {
+      process.exit(1);
+    }
   });
 
-  // WebSocket connection handling
-  require('./src/services/notification/webSocketService')(wss);
-  
-  systemLogger.info('✅ WebSocket server initialized');
+  process.on('unhandledRejection', (reason, promise) => {
+    systemLogger.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  });
 }
 
 // ======================================================
-// 13. ERROR HANDLING MIDDLEWARE
+// 6. CLUSTER MODE (FOR PRODUCTION)
 // ======================================================
 
-// 404 handler
-app.use(notFoundHandler);
+/**
+ * Start server in cluster mode (production only)
+ */
+async function startCluster() {
+  const numCPUs = os.cpus().length;
+  systemLogger.info(`🚀 Starting cluster with ${numCPUs} workers`);
 
-// Global error handler
-app.use(errorHandler);
+  if (cluster.isPrimary) {
+    // Fork workers
+    for (let i = 0; i < numCPUs; i++) {
+      cluster.fork();
+    }
 
-// Graceful shutdown handler
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+    cluster.on('exit', (worker, code, signal) => {
+      systemLogger.warn(`Worker ${worker.process.pid} died. Restarting...`);
+      cluster.fork();
+    });
+
+    cluster.on('online', (worker) => {
+      systemLogger.info(`Worker ${worker.process.pid} is online`);
+    });
+
+    cluster.on('listening', (worker, address) => {
+      systemLogger.info(`Worker ${worker.process.pid} listening on ${address.address}:${address.port}`);
+    });
+  } else {
+    // Worker process
+    await startServer();
+  }
+}
 
 // ======================================================
-// 14. SERVER INITIALIZATION
+// 7. MAIN SERVER STARTUP FUNCTION
 // ======================================================
 
-const PORT = process.env.PORT || 3000;
-
+/**
+ * Main server startup function
+ */
 async function startServer() {
   try {
-    // Check database connection
-    const dbConnected = await checkDatabaseConnection();
-    if (!dbConnected) {
-      throw new Error('Failed to connect to database');
-    }
-
-    // Connect to Redis if configured
-    if (redisClient) {
-      await redisClient.connect();
-    }
-
-    // Start server
-    const server = wss ? require('http').createServer(app) : app;
+    const startTime = Date.now();
     
-    server.listen(PORT, () => {
-      const serverType = wss ? 'WebSocket-enabled ' : '';
-      systemLogger.info(`
+    // Log startup banner
+    systemLogger.info(`
 ╔══════════════════════════════════════════════════════════════╗
 ║                KIN2 WORKFORCE PLATFORM v2.5.0               ║
-║                ${serverType}Production Server                ║
+║                Production Server                            ║
 ╠══════════════════════════════════════════════════════════════╣
-║  🔗 API URL:      ${process.env.API_URL || `http://localhost:${PORT}`}
-║  🌐 Frontend:     ${process.env.APP_URL || 'http://localhost:5173'}
-║  📊 Environment:  ${process.env.NODE_ENV || 'development'}
-║  🗄️  Database:     Connected
-║  🤖 AI Agents:    ${FEATURES.AI_AGENTS ? 'Enabled' : 'Disabled'}
-║  💳 Payments:     ${FEATURES.PAYMENTS ? 'Enabled' : 'Disabled'}
-║  📧 Notifications:${FEATURES.EMAIL_NOTIFICATIONS ? 'Enabled' : 'Disabled'}
-║  ⚖️  KFN Scoring:  ${FEATURES.KFN_SCORING ? 'Enabled' : 'Disabled'}
+║  🚀 Starting server...                                      ║
+║  📁 Environment: ${process.env.NODE_ENV || 'development'}
+║  🔗 API URL: ${process.env.API_URL || `http://localhost:${process.env.PORT || 3000}`}
+║  🌐 Frontend: ${process.env.APP_URL || 'http://localhost:5173'}
+║  📊 Mode: ${process.env.ENABLE_CLUSTER === 'true' ? 'Cluster' : 'Single'}
+╚══════════════════════════════════════════════════════════════╝
+    `);
+
+    // Initialize services
+    const services = await initializeServices();
+    
+    // Create Express app
+    const app = createApp(process.env, services);
+    
+    // Create HTTP server
+    const { server, wss } = await createServer(app, services);
+    
+    // Start server
+    const PORT = process.env.PORT || 3000;
+    const HOST = process.env.HOST || '0.0.0.0';
+    
+    server.listen(PORT, HOST, () => {
+      const startupTime = Date.now() - startTime;
+      const serverType = wss ? 'WebSocket-enabled ' : '';
+      
+      systemLogger.info(`
+╔══════════════════════════════════════════════════════════════╗
+║                SERVER STARTUP COMPLETE                      ║
 ╠══════════════════════════════════════════════════════════════╣
-║  📚 API Docs:     ${process.env.API_URL || `http://localhost:${PORT}`}/api/docs
-║  🩺 Health Check: ${process.env.API_URL || `http://localhost:${PORT}`}/health
-║  🔐 Admin:        ${process.env.API_URL || `http://localhost:${PORT}`}/api/v1/admin
+║  ✅ Server:      ${serverType}HTTP Server
+║  ✅ Port:        ${PORT}
+║  ✅ Host:        ${HOST}
+║  ✅ Startup:     ${startupTime}ms
+║  ✅ Environment: ${process.env.NODE_ENV}
+╠══════════════════════════════════════════════════════════════╣
+║  📚 API Docs:     ${process.env.API_URL || `http://localhost:${PORT}`}/api-docs
+║  🩺 Health:       ${process.env.API_URL || `http://localhost:${PORT}`}/health
+║  📊 Metrics:      ${process.env.API_URL || `http://localhost:${PORT}`}/metrics
+║  🔧 Admin:        ${process.env.API_URL || `http://localhost:${PORT}`}/admin
 ╚══════════════════════════════════════════════════════════════╝
       `);
 
-      // Log startup complete
-      systemLogger.info(`✅ Server is running on port ${PORT}`);
+      // Log configured features
+      logFeatureStatus();
       
-      // Initialize AI agents if enabled
-      if (FEATURES.AI_AGENTS) {
-        const aiService = require('./src/services/ai');
-        aiService.initializeAgents()
-          .then(() => systemLogger.info('✅ AI agents initialized'))
-          .catch(err => systemLogger.error('❌ Failed to initialize AI agents:', err));
-      }
-
       // Start background jobs
-      startBackgroundJobs();
+      if (services.queues) {
+        scheduleJobs(services.queues);
+        systemLogger.info('✅ Background jobs scheduled');
+      }
+      
+      // Start AI agents if enabled
+      if (services.ai && process.env.ENABLE_AI_AGENTS === 'true') {
+        services.ai.startAgents();
+        systemLogger.info('✅ AI agents started');
+      }
     });
 
     // Handle server errors
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
         systemLogger.error(`❌ Port ${PORT} is already in use`);
-        systemLogger.info('Try:');
-        systemLogger.info('  1. Change PORT in .env file');
-        systemLogger.info(`  2. Kill process: lsof -ti:${PORT} | xargs kill`);
+        systemLogger.info('Try one of these solutions:');
+        systemLogger.info(`  1. Change PORT in .env file (currently: ${PORT})`);
+        systemLogger.info(`  2. Kill process on port ${PORT}:`);
+        systemLogger.info(`     - lsof -ti:${PORT} | xargs kill`);
+        systemLogger.info(`     - pkill -f "node.*${PORT}"`);
       } else {
         systemLogger.error('❌ Server error:', error);
       }
       process.exit(1);
     });
 
-    return server;
+    // Handle process warnings
+    process.on('warning', (warning) => {
+      systemLogger.warn('⚠️  Process warning:', warning);
+    });
+
+    return { server, app, services };
   } catch (error) {
     systemLogger.error('❌ Failed to start server:', error);
     process.exit(1);
@@ -565,121 +491,117 @@ async function startServer() {
 }
 
 // ======================================================
-// 15. BACKGROUND JOBS
+// 8. HELPER FUNCTIONS
 // ======================================================
 
-function startBackgroundJobs() {
-  // Cleanup expired sessions (runs every hour)
-  setInterval(async () => {
-    try {
-      const { cleanupExpiredSessions } = require('./src/services/authService');
-      const deletedCount = await cleanupExpiredSessions();
-      if (deletedCount > 0) {
-        systemLogger.debug(`Cleaned up ${deletedCount} expired sessions`);
-      }
-    } catch (error) {
-      systemLogger.error('Failed to cleanup sessions:', error);
-    }
-  }, 60 * 60 * 1000); // 1 hour
+/**
+ * Log feature status
+ */
+function logFeatureStatus() {
+  const features = {
+    '🤖 AI Agents': process.env.ENABLE_AI_AGENTS === 'true',
+    '📧 Email': process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true' && process.env.SMTP_HOST,
+    '💳 Payments': process.env.ENABLE_PAYMENTS === 'true' && process.env.STRIPE_SECRET_KEY,
+    '⚖️ KFN Scoring': process.env.ENABLE_KFN_SCORING === 'true',
+    '🌐 WebSockets': process.env.ENABLE_WEBSOCKETS === 'true',
+    '📊 Analytics': true,
+    '🔐 Authentication': true,
+    '📝 Job Matching': true
+  };
 
-  // Generate daily analytics (runs at midnight)
-  const schedule = require('node-schedule');
-  schedule.scheduleJob('0 0 * * *', async () => {
-    try {
-      const { generateDailyReport } = require('./src/services/analyticsService');
-      await generateDailyReport();
-      systemLogger.info('Daily analytics report generated');
-    } catch (error) {
-      systemLogger.error('Failed to generate daily report:', error);
-    }
+  systemLogger.info('🔧 Feature Status:');
+  Object.entries(features).forEach(([name, enabled]) => {
+    const status = enabled ? '✅ Enabled' : '❌ Disabled';
+    systemLogger.info(`  ${name.padEnd(20)} ${status}`);
+  });
+}
+
+/**
+ * Perform pre-flight checks
+ */
+async function preFlightChecks() {
+  const checks = [];
+  
+  // Check Node.js version
+  const nodeVersion = process.version;
+  const requiredVersion = '>=20.0.0';
+  checks.push({
+    name: 'Node.js Version',
+    status: nodeVersion >= 'v20.0.0',
+    message: `Required: ${requiredVersion}, Current: ${nodeVersion}`
   });
 
-  // AI agent health check (runs every 5 minutes)
-  setInterval(async () => {
-    if (FEATURES.AI_AGENTS) {
-      try {
-        const aiService = require('./src/services/ai');
-        const status = await aiService.checkAgentsHealth();
-        if (!status.healthy) {
-          systemLogger.warn('AI agent health check failed:', status);
-        }
-      } catch (error) {
-        systemLogger.error('AI health check error:', error);
-      }
-    }
-  }, 5 * 60 * 1000); // 5 minutes
+  // Check memory
+  const totalMem = os.totalmem() / 1024 / 1024 / 1024; // GB
+  checks.push({
+    name: 'System Memory',
+    status: totalMem >= 1, // At least 1GB
+    message: `Total: ${totalMem.toFixed(2)}GB`
+  });
 
-  systemLogger.info('✅ Background jobs initialized');
+  // Check disk space
+  const disk = require('check-disk-space').default;
+  const diskInfo = await disk(process.cwd());
+  const freeSpaceGB = diskInfo.free / 1024 / 1024 / 1024;
+  checks.push({
+    name: 'Disk Space',
+    status: freeSpaceGB >= 1, // At least 1GB free
+    message: `Free: ${freeSpaceGB.toFixed(2)}GB`
+  });
+
+  // Log checks
+  systemLogger.info('🔍 Pre-flight checks:');
+  checks.forEach(check => {
+    const status = check.status ? '✅' : '❌';
+    systemLogger.info(`  ${status} ${check.name}: ${check.message}`);
+  });
+
+  // Return false if any critical check fails
+  return checks.every(check => check.status || !check.critical);
 }
 
 // ======================================================
-// 16. GRACEFUL SHUTDOWN
+// 9. ENTRY POINT
 // ======================================================
 
-async function gracefulShutdown(signal) {
-  systemLogger.info(`\n${signal} received. Starting graceful shutdown...`);
-  
-  // 1. Stop accepting new connections
-  if (wss) {
-    wss.close();
-  }
-  
-  // 2. Close database connection
+/**
+ * Main entry point
+ */
+async function main() {
   try {
-    await prisma.$disconnect();
-    systemLogger.info('✅ Database connection closed');
-  } catch (error) {
-    systemLogger.error('❌ Error closing database connection:', error);
-  }
-  
-  // 3. Close Redis connection
-  if (redisClient) {
-    try {
-      await redisClient.quit();
-      systemLogger.info('✅ Redis connection closed');
-    } catch (error) {
-      systemLogger.error('❌ Error closing Redis connection:', error);
+    // Perform pre-flight checks
+    const checksPassed = await preFlightChecks();
+    if (!checksPassed) {
+      systemLogger.error('❌ Pre-flight checks failed. Exiting.');
+      process.exit(1);
     }
+
+    // Start in cluster mode if enabled (production)
+    if (process.env.ENABLE_CLUSTER === 'true' && process.env.NODE_ENV === 'production') {
+      await startCluster();
+    } else {
+      // Start in single process mode
+      await startServer();
+    }
+  } catch (error) {
+    systemLogger.error('❌ Fatal error during startup:', error);
+    process.exit(1);
   }
-  
-  // 4. Exit process
-  systemLogger.info('👋 Shutdown complete. Goodbye!');
-  process.exit(0);
 }
 
 // ======================================================
-// 17. UNCAUGHT EXCEPTION HANDLING
+// 10. EXECUTION
 // ======================================================
 
-process.on('uncaughtException', (error) => {
-  systemLogger.error('❌ Uncaught Exception:', error);
-  // Don't exit in production, let the process manager restart
-  if (process.env.NODE_ENV !== 'production') {
-    process.exit(1);
-  }
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  systemLogger.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-// ======================================================
-// 18. START THE SERVER
-// ======================================================
-
-// Only start if this file is run directly (not required as module)
+// Only execute if this file is run directly (not imported as module)
 if (require.main === module) {
-  startServer().catch(error => {
-    systemLogger.error('Failed to start server:', error);
-    process.exit(1);
-  });
+  main();
 }
 
-// Export for testing
+// Export for testing and programmatic use
 module.exports = {
-  app,
-  prisma,
-  redisClient,
+  initializeServices,
   startServer,
-  gracefulShutdown
+  createServer,
+  setupGracefulShutdown
 };
