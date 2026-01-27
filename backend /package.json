@@ -1,0 +1,59 @@
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/kin2_platform?schema=public"
+
+# JWT
+JWT_SECRET="your-super-secret-jwt-key-32-characters-minimum"
+JWT_REFRESH_SECRET="your-refresh-token-secret-key-32-characters"
+JWT_EXPIRES_IN="1h"
+JWT_REFRESH_EXPIRES_IN="7d"
+
+# AI Services
+DEEPSEEK_API_KEY="your-deepseek-api-key"
+OPENAI_API_KEY="your-openai-api-key"
+AI_PROVIDER="deepseek"
+
+# Payment Gateway
+STRIPE_SECRET_KEY="sk_test_xxxx"
+STRIPE_WEBHOOK_SECRET="whsec_xxxx"
+STRIPE_PUBLISHABLE_KEY="pk_test_xxxx"
+
+# Email Service
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT=587
+SMTP_USER="your-email@gmail.com"
+SMTP_PASSWORD="your-app-password"
+EMAIL_FROM="Kin2 Platform <noreply@kin2.com>"
+
+# SMS Service (Twilio)
+TWILIO_ACCOUNT_SID="ACxxxx"
+TWILIO_AUTH_TOKEN="xxxx"
+TWILIO_PHONE_NUMBER="+1234567890"
+
+# File Storage
+AWS_ACCESS_KEY_ID="AKIAxxxx"
+AWS_SECRET_ACCESS_KEY="xxxx"
+AWS_REGION="us-east-1"
+S3_BUCKET_NAME="kin2-platform"
+CLOUDINARY_URL="cloudinary://xxxx"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+REDIS_PASSWORD=""
+
+# Application
+NODE_ENV="development"
+PORT=3000
+FRONTEND_URL="http://localhost:5173"
+API_BASE_URL="http://localhost:3000"
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Logging
+LOG_LEVEL="info"
+LOG_FILE_PATH="./logs"
+
+# Admin
+ADMIN_EMAIL="admin@kin2.com"
+ADMIN_PASSWORD="Admin@123"
