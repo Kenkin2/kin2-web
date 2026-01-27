@@ -1,0 +1,2222 @@
+// ======================================================
+// KIN2 WORKFORCE PLATFORM - COMPLETE DATABASE SCHEMA
+// ======================================================
+// Version: 2.5.0 | Models: 50+ | Relations: 100+
+// ======================================================
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "filterJson", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [pg_trgm, uuid_ossp, pgcrypto]
+}
+
+// ======================================================
+// ENUMS
+// ======================================================
+
+enum Role {
+  ADMIN
+  EMPLOYER
+  WORKER
+  VOLUNTEER
+  FREELANCER
+  SELLER
+  MODERATOR
+  SUPPORT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BANNED
+  PENDING
+  VERIFIED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+  OTHER
+}
+
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  ACTIVE
+  FILLED
+  CLOSED
+  EXPIRED
+  ARCHIVED
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWING
+  SHORTLISTED
+  INTERVIEWING
+  OFFERED
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+}
+
+enum ShiftStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  DISPUTED
+  CANCELLED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+  PAYMENT
+  REFUND
+  COMMISSION
+  BONUS
+  FEE
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIAL
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum NotificationType {
+  EMAIL
+  PUSH
+  SMS
+  IN_APP
+  WEBHOOK
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ComplianceStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum ProductType {
+  PHYSICAL
+  DIGITAL
+  SERVICE
+  SUBSCRIPTION
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FLAGGED
+}
+
+enum MatchType {
+  PERFECT
+  STRONG
+  GOOD
+  FAIR
+  WEAK
+}
+
+enum AgentType {
+  RESUME_SCREENER
+  JOB_MATCHER
+  INTERVIEW_SCHEDULER
+  SALARY_RECOMMENDER
+  CULTURE_FIT_ANALYZER
+  FRAUD_DETECTOR
+  SUPPORT_AGENT
+  ONBOARDING_ASSISTANT
+  RETENTION_ADVISOR
+  PERFORMANCE_ANALYZER
+  COMPLIANCE_CHECKER
+  MARKET_ANALYZER
+  TRAINING_COORDINATOR
+  SKILLS_ASSESSOR
+}
+
+enum AgentStatus {
+  IDLE
+  PROCESSING
+  SUCCESS
+  FAILED
+  OFFLINE
+  MAINTENANCE
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+  DEBUG
+  CRITICAL
+}
+
+enum KarmaAction {
+  REGISTRATION
+  COMPLETE_PROFILE
+  JOB_APPLICATION
+  INTERVIEW_ATTENDANCE
+  JOB_COMPLETION
+  POSITIVE_REVIEW
+  REFERRAL
+  COMMUNITY_CONTRIBUTION
+  SKILL_VERIFICATION
+  CERTIFICATION_EARNED
+}
+
+enum ReportType {
+  USER
+  JOB
+  APPLICATION
+  PAYMENT
+  REVIEW
+  CONTENT
+  FRAUD
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+  ACTION_TAKEN
+}
+
+// ======================================================
+// CORE USER MODELS
+// ======================================================
+
+model User {
+  id                String          @id @default(cuid())
+  email             String          @unique @db.VarChar(255)
+  passwordHash      String          @db.VarChar(255)
+  role              Role            @default(WORKER)
+  status            UserStatus      @default(PENDING)
+  isEmailVerified   Boolean         @default(false)
+  isPhoneVerified   Boolean         @default(false)
+  isTwoFactorEnabled Boolean        @default(false)
+  twoFactorSecret   String?         @db.VarChar(255)
+  verificationToken String?         @db.VarChar(255)
+  resetToken        String?         @db.VarChar(255)
+  resetTokenExpiry  DateTime?
+  lastLoginAt       DateTime?
+  lastActiveAt      DateTime?
+  lastPasswordChange DateTime?
+  failedLoginAttempts Int           @default(0)
+  lockUntil         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  deletedAt         DateTime?
+
+  // Profile
+  profile          Profile?
+  
+  // Accounts
+  employer         Employer?
+  worker          Worker?
+  volunteer       Volunteer?
+  freelancer      Freelancer?
+  seller          Seller?
+  admin           Admin?
+  
+  // Sessions & Tokens
+  sessions        Session[]
+  refreshTokens   RefreshToken[]
+  apiKeys         ApiKey[]
+  
+  // Jobs & Applications
+  jobs            Job[]             @relation("JobOwner")
+  applications    Application[]
+  interviews      Interview[]
+  
+  // Financial
+  payments        Payment[]
+  earnings        Earning[]
+  transactions    Transaction[]
+  subscriptions   Subscription[]
+  
+  // Communication
+  sentMessages    Message[]         @relation("MessageSender")
+  receivedMessages Message[]        @relation("MessageReceiver")
+  notifications   Notification[]
+  
+  // Engagement
+  karmaTransactions KarmaTransaction[]
+  reviews         Review[]          @relation("Reviewer")
+  reviewsReceived Review[]          @relation("ReviewSubject")
+  
+  // Administration
+  activityLogs    ActivityLog[]     @relation("UserActivity")
+  reportsCreated  Report[]          @relation("Reporter")
+  reportsReceived Report[]          @relation("ReportSubject")
+  
+  // Indexes
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+  @@fulltext([email])
+}
+
+model Profile {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Personal Info
+  firstName         String          @db.VarChar(100)
+  lastName          String          @db.VarChar(100)
+  displayName       String?         @db.VarChar(200)
+  avatar            String?         @db.VarChar(500)
+  coverPhoto        String?         @db.VarChar(500)
+  bio               String?         @db.Text
+  gender            Gender?
+  dateOfBirth       DateTime?
+  nationality       String?         @db.VarChar(100)
+  
+  // Contact
+  phone             String?         @db.VarChar(50)
+  phoneCountryCode  String?         @db.VarChar(10)
+  alternateEmail    String?         @db.VarChar(255)
+  
+  // Location
+  addressLine1      String?         @db.VarChar(255)
+  addressLine2      String?         @db.VarChar(255)
+  city              String?         @db.VarChar(100)
+  state             String?         @db.VarChar(100)
+  country           String?         @db.VarChar(100)
+  postalCode        String?         @db.VarChar(20)
+  timezone          String?         @db.VarChar(50)
+  latitude          Decimal?        @db.Decimal(10, 8)
+  longitude         Decimal?        @db.Decimal(11, 8)
+  
+  // Professional
+  headline          String?         @db.VarChar(255)
+  summary           String?         @db.Text
+  yearsExperience   Int?
+  currentJobTitle   String?         @db.VarChar(200)
+  currentCompany    String?         @db.VarChar(200)
+  
+  // Social Media
+  website           String?         @db.VarChar(500)
+  linkedin          String?         @db.VarChar(500)
+  github            String?         @db.VarChar(500)
+  twitter           String?         @db.VarChar(500)
+  facebook          String?         @db.VarChar(500)
+  instagram         String?         @db.VarChar(500)
+  
+  // Preferences
+  preferredLanguage String          @default("en") @db.VarChar(10)
+  currency          String          @default("USD") @db.VarChar(3)
+  notificationSettings Json         @default("{}") @db.Json
+  privacySettings   Json            @default("{}") @db.Json
+  searchVisibility  Boolean         @default(true)
+  
+  // Stats
+  profileCompletion Int             @default(0) @db.SmallInt
+  viewsCount        Int             @default(0)
+  connectionsCount  Int             @default(0)
+  recommendationsCount Int          @default(0)
+  
+  // Verification
+  idVerified        Boolean         @default(false)
+  addressVerified   Boolean         @default(false)
+  emailVerified     Boolean         @default(false)
+  phoneVerified     Boolean         @default(false)
+  socialVerified    Boolean         @default(false)
+  
+  // Skills & Education (Relations)
+  skills            Skill[]
+  educations        Education[]
+  experiences       Experience[]
+  certifications    Certification[]
+  languages         Language[]
+  portfolios        Portfolio[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([city])
+  @@index([country])
+  @@index([profileCompletion])
+  @@fulltext([firstName, lastName, headline, summary, bio])
+}
+
+model Session {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token             String          @unique @db.VarChar(500)
+  ipAddress         String?         @db.VarChar(45)
+  userAgent         String?         @db.Text
+  deviceId          String?         @db.VarChar(255)
+  deviceType        String?         @db.VarChar(50)
+  platform          String?         @db.VarChar(50)
+  browser           String?         @db.VarChar(100)
+  os                String?         @db.VarChar(100)
+  expiresAt         DateTime
+  lastActivityAt    DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token             String          @unique @db.VarChar(500)
+  expiresAt         DateTime
+  revoked           Boolean         @default(false)
+  replacedByToken   String?         @db.VarChar(500)
+  revokedAt         DateTime?
+  revokedByIp       String?         @db.VarChar(45)
+  createdAt         DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model ApiKey {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String          @db.VarChar(100)
+  key               String          @unique @db.VarChar(255)
+  secret            String          @db.VarChar(255)
+  prefix            String          @db.VarChar(10)
+  permissions       String[]        @db.VarChar(50)[] // ["read", "write", "delete"]
+  rateLimit         Int             @default(1000)
+  expiresAt         DateTime?
+  lastUsedAt        DateTime?
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([key])
+  @@index([prefix])
+  @@unique([userId, name])
+}
+
+// ======================================================
+// BUSINESS MODELS (ROLE-SPECIFIC)
+// ======================================================
+
+model Employer {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Company Info
+  companyName       String          @db.VarChar(200)
+  companyLogo       String?         @db.VarChar(500)
+  companyWebsite    String?         @db.VarChar(500)
+  companyDescription String?        @db.Text
+  companySize       String?         @db.VarChar(50) // "1-10", "11-50", "51-200", etc.
+  industry          String?         @db.VarChar(100)
+  foundedYear       Int?
+  taxId             String?         @db.VarChar(100)
+  registrationNumber String?        @db.VarChar(100)
+  
+  // Contact
+  contactPerson     String          @db.VarChar(200)
+  contactEmail      String          @db.VarChar(255)
+  contactPhone      String?         @db.VarChar(50)
+  contactPosition   String?         @db.VarChar(100)
+  
+  // Verification
+  isVerified        Boolean         @default(false)
+  verificationLevel Int             @default(0) // 0-3
+  verificationDocuments Json?       @db.Json
+  
+  // Stats
+  totalJobsPosted   Int             @default(0)
+  totalHires        Int             @default(0)
+  totalSpent        Decimal         @default(0) @db.Decimal(15, 2)
+  avgRating         Decimal?        @db.Decimal(3, 2)
+  responseRate      Decimal?        @db.Decimal(5, 2)
+  
+  // Settings
+  subscriptionPlan  SubscriptionPlan @default(FREE)
+  autoRenew         Boolean         @default(true)
+  invoiceEmail      String?         @db.VarChar(255)
+  billingAddress    Json?           @db.Json
+  
+  // Relations
+  departments       Department[]
+  jobs              Job[]
+  complianceDocs    ComplianceDoc[]
+  products          Product[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([companyName])
+  @@index([industry])
+  @@fulltext([companyName, companyDescription])
+}
+
+model Worker {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Worker Specific
+  workerId          String          @unique @db.VarChar(50) // Public ID: WRK-001
+  headline          String?         @db.VarChar(255)
+  summary           String?         @db.Text
+  
+  // Availability
+  availabilityType  String          @default("FULL_TIME") @db.VarChar(50) // FULL_TIME, PART_TIME, CONTRACT, etc.
+  availabilityDays  String[]        @db.VarChar(20)[] // ["MON", "TUE", "WED", etc.]
+  availabilityHours Json            @default("{}") @db.Json
+  immediateStart    Boolean         @default(false)
+  noticePeriod      Int?            @default(0) // Days
+  
+  // Work Preferences
+  preferredJobTypes String[]        @db.VarChar(100)[] // ["REMOTE", "ONSITE", "HYBRID"]
+  preferredIndustries String[]      @db.VarChar(100)[]
+  preferredLocations String[]       @db.VarChar(100)[]
+  minSalary         Decimal?        @db.Decimal(10, 2)
+  maxSalary         Decimal?        @db.Decimal(10, 2)
+  salaryCurrency    String          @default("USD") @db.VarChar(3)
+  isOpenToRelocation Boolean        @default(false)
+  
+  // Stats
+  totalEarnings     Decimal         @default(0) @db.Decimal(15, 2)
+  totalJobs         Int             @default(0)
+  avgRating         Decimal?        @db.Decimal(3, 2)
+  completionRate    Decimal?        @db.Decimal(5, 2)
+  responseRate      Decimal?        @db.Decimal(5, 2)
+  
+  // Verification
+  identityVerified  Boolean         @default(false)
+  skillsVerified    Boolean         @default(false)
+  backgroundChecked Boolean         @default(false)
+  trustScore        Int             @default(0)
+  
+  // Professional
+  currentJobTitle   String?         @db.VarChar(200)
+  currentCompany    String?         @db.VarChar(200)
+  yearsExperience   Int?
+  highestEducation  String?         @db.VarChar(100)
+  
+  // Worker Specific Relations
+  shifts            Shift[]
+  completedShifts   CompletedShift[]
+  earnings          Earning[]
+  jobMatches        JobMatch[]
+  kfnScores         KFNScore[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([workerId])
+  @@index([availabilityType])
+  @@index([trustScore])
+}
+
+model Volunteer {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Volunteer Specific
+  causes            String[]        @db.VarChar(100)[]
+  skills            String[]        @db.VarChar(100)[]
+  availability      Json            @default("{}") @db.Json
+  hoursCommitted    Int             @default(0)
+  hoursCompleted    Int             @default(0)
+  
+  // Preferences
+  preferredRoles    String[]        @db.VarChar(100)[]
+  preferredCauses   String[]        @db.VarChar(100)[]
+  locationRange     Int?            @default(50) // km
+  
+  // Verification
+  backgroundCheck   Boolean         @default(false)
+  referenceVerified Boolean         @default(false)
+  
+  // Stats
+  totalProjects     Int             @default(0)
+  volunteerScore    Int             @default(0)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([causes])
+}
+
+model Freelancer {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Freelancer Specific
+  hourlyRate        Decimal?        @db.Decimal(10, 2)
+  projectRate       Decimal?        @db.Decimal(10, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  
+  // Services
+  services          String[]        @db.VarChar(100)[]
+  expertiseLevel    String?         @db.VarChar(50) // "BEGINNER", "INTERMEDIATE", "EXPERT"
+  
+  // Availability
+  availableHours    Int?            @default(40)
+  timezone          String?         @db.VarChar(50)
+  
+  // Platform Stats
+  totalProjects     Int             @default(0)
+  successRate       Decimal?        @db.Decimal(5, 2)
+  avgRating         Decimal?        @db.Decimal(3, 2)
+  onTimeDelivery    Decimal?        @db.Decimal(5, 2)
+  
+  // Portfolio
+  portfolioLink     String?         @db.VarChar(500)
+  githubLink        String?         @db.VarChar(500)
+  behanceLink       String?         @db.VarChar(500)
+  dribbbleLink      String?         @db.VarChar(500)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([services])
+  @@index([hourlyRate])
+}
+
+model Seller {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Seller Info
+  storeName         String          @db.VarChar(200)
+  storeDescription  String?         @db.Text
+  storeLogo         String?         @db.VarChar(500)
+  storeBanner       String?         @db.VarChar(500)
+  
+  // Contact
+  businessEmail     String?         @db.VarChar(255)
+  businessPhone     String?         @db.VarChar(50)
+  businessAddress   Json?           @db.Json
+  
+  // Verification
+  businessVerified  Boolean         @default(false)
+  taxInfoVerified   Boolean         @default(false)
+  
+  // Stats
+  totalProducts     Int             @default(0)
+  totalSales        Int             @default(0)
+  totalRevenue      Decimal         @default(0) @db.Decimal(15, 2)
+  avgRating         Decimal?        @db.Decimal(3, 2)
+  
+  // Settings
+  shippingPolicy    String?         @db.Text
+  returnPolicy      String?         @db.Text
+  paymentMethods    String[]        @db.VarChar(50)[]
+  
+  // Relations
+  products          Product[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([storeName])
+}
+
+model Admin {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Admin Specific
+  adminLevel        Int             @default(1) // 1-5
+  permissions       String[]        @db.VarChar(50)[] // ["users", "jobs", "payments", "reports", "settings"]
+  assignedModules   String[]        @db.VarChar(50)[]
+  isSuperAdmin      Boolean         @default(false)
+  
+  // Activity
+  lastActiveAt      DateTime?
+  loginCount        Int             @default(0)
+  
+  // Security
+  mfaEnabled        Boolean         @default(true)
+  ipWhitelist       String[]        @db.VarChar(45)[]
+  accessExpiresAt   DateTime?
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([adminLevel])
+}
+
+// ======================================================
+// JOB & WORKFLOW MODELS
+// ======================================================
+
+model Job {
+  id                String          @id @default(cuid())
+  employerId        String
+  employer          Employer        @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  userId            String          // For denormalization
+  user              User            @relation("JobOwner", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Job Details
+  jobId             String          @unique @db.VarChar(50) // JOB-001
+  title             String          @db.VarChar(200)
+  slug              String          @unique @db.VarChar(255)
+  description       String          @db.Text
+  requirements      String          @db.Text
+  responsibilities  String          @db.Text
+  benefits          String?         @db.Text
+  
+  // Job Type
+  jobType           String          @default("FULL_TIME") @db.VarChar(50)
+  workType          String          @default("ONSITE") @db.VarChar(50) // REMOTE, HYBRID, ONSITE
+  experienceLevel   String          @default("MID_LEVEL") @db.VarChar(50)
+  educationLevel    String?         @db.VarChar(50)
+  
+  // Location
+  location          String?         @db.VarChar(200)
+  city              String?         @db.VarChar(100)
+  state             String?         @db.VarChar(100)
+  country           String?         @db.VarChar(100)
+  postalCode        String?         @db.VarChar(20)
+  isRemote          Boolean         @default(false)
+  remoteAllowed     Boolean         @default(false)
+  latitude          Decimal?        @db.Decimal(10, 8)
+  longitude         Decimal?        @db.Decimal(11, 8)
+  
+  // Salary
+  salaryMin         Decimal?        @db.Decimal(10, 2)
+  salaryMax         Decimal?        @db.Decimal(10, 2)
+  salaryCurrency    String          @default("USD") @db.VarChar(3)
+  salaryType        String          @default("YEARLY") @db.VarChar(20)
+  salaryDisclosed   Boolean         @default(false)
+  
+  // Status & Dates
+  status            JobStatus       @default(DRAFT)
+  visibility        String          @default("PUBLIC") @db.VarChar(20)
+  featured          Boolean         @default(false)
+  urgent            Boolean         @default(false)
+  
+  publishedAt       DateTime?
+  expiresAt         DateTime?
+  closedAt          DateTime?
+  
+  // Application Details
+  applicationDeadline DateTime?
+  applicationLimit   Int?
+  applicationCount   Int             @default(0)
+  autoReject         Boolean         @default(false)
+  
+  // Requirements
+  requiredSkills    String[]        @db.VarChar(100)[]
+  preferredSkills   String[]        @db.VarChar(100)[]
+  requiredDocuments String[]        @db.VarChar(50)[]
+  
+  // Metadata
+  departmentId      String?
+  department        Department?     @relation(fields: [departmentId], references: [id])
+  category          String?         @db.VarChar(100)
+  tags              String[]        @db.VarChar(50)[]
+  metaTitle         String?         @db.VarChar(200)
+  metaDescription   String?         @db.VarChar(500)
+  metaKeywords      String[]        @db.VarChar(50)[]
+  
+  // Stats
+  viewsCount        Int             @default(0)
+  applicationsCount Int             @default(0)
+  shortlistedCount  Int             @default(0)
+  interviewsCount   Int             @default(0)
+  hiredCount        Int             @default(0)
+  
+  // Relations
+  applications      Application[]
+  interviews        Interview[]
+  shifts            Shift[]
+  jobMatches        JobMatch[]
+  kfnScores         KFNScore[]
+  complianceDocs    ComplianceDoc[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([employerId])
+  @@index([userId])
+  @@index([status])
+  @@index([jobType])
+  @@index([workType])
+  @@index([country])
+  @@index([city])
+  @@index([publishedAt])
+  @@index([expiresAt])
+  @@fulltext([title, description, requirements, responsibilities])
+  @@map("jobs")
+}
+
+model Application {
+  id                String          @id @default(cuid())
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workerId          String?
+  worker            Worker?         @relation(fields: [workerId], references: [id])
+  
+  // Application Details
+  applicationId     String          @unique @db.VarChar(50) // APP-001
+  coverLetter       String?         @db.Text
+  resumeText        String?         @db.Text
+  resumeFile        String?         @db.VarChar(500)
+  portfolioLink     String?         @db.VarChar(500)
+  linkedinProfile   String?         @db.VarChar(500)
+  githubProfile     String?         @db.VarChar(500)
+  
+  // Status
+  status            ApplicationStatus @default(PENDING)
+  statusReason      String?         @db.VarChar(500)
+  statusUpdatedAt   DateTime        @default(now())
+  
+  // Screening
+  screeningScore    Decimal?        @db.Decimal(5, 2)
+  screeningNotes    String?         @db.Text
+  screeningAgentId  String?         @db.VarChar(100)
+  
+  // Interview
+  interviewScore    Decimal?        @db.Decimal(5, 2)
+  interviewNotes    String?         @db.Text
+  
+  // Offer
+  offeredSalary     Decimal?        @db.Decimal(10, 2)
+  offeredBenefits   String?         @db.Text
+  offerExpiresAt    DateTime?
+  offerAcceptedAt   DateTime?
+  
+  // Withdrawal
+  withdrawnReason   String?         @db.VarChar(500)
+  withdrawnAt       DateTime?
+  
+  // AI Data
+  aiAnalysis        Json?           @db.Json
+  matchScore        Decimal?        @db.Decimal(5, 2)
+  strengths         String[]        @db.VarChar(200)[]
+  concerns          String[]        @db.VarChar(200)[]
+  
+  // Relations
+  interviews        Interview[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@unique([jobId, userId])
+  @@index([jobId])
+  @@index([userId])
+  @@index([workerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("applications")
+}
+
+model Interview {
+  id                String          @id @default(cuid())
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  applicationId     String
+  application       Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  employerId        String
+  employer          Employer        @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  candidateId       String
+  candidate         User            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  
+  // Interview Details
+  interviewId       String          @unique @db.VarChar(50) // INT-001
+  title             String          @db.VarChar(200)
+  description       String?         @db.Text
+  type              String          @default("PHONE") @db.VarChar(50)
+  format            String          @default("VIDEO") @db.VarChar(50)
+  
+  // Scheduling
+  scheduledAt       DateTime
+  duration          Int             @default(60) // minutes
+  timezone          String          @default("UTC") @db.VarChar(50)
+  
+  // Meeting Details
+  meetingPlatform   String?         @db.VarChar(50) // "ZOOM", "GOOGLE_MEET", "TEAMS"
+  meetingLink       String?         @db.VarChar(500)
+  meetingId         String?         @db.VarChar(100)
+  meetingPassword   String?         @db.VarChar(100)
+  meetingNotes      String?         @db.Text
+  
+  // Participants
+  interviewerIds    String[]        @db.VarChar(100)[]
+  interviewerNames  String[]        @db.VarChar(200)[]
+  interviewerEmails String[]        @db.VarChar(255)[]
+  
+  // Status
+  status            InterviewStatus @default(SCHEDULED)
+  reminderSent      Boolean         @default(false)
+  reminderSentAt    DateTime?
+  
+  // Results
+  startedAt         DateTime?
+  endedAt           DateTime?
+  actualDuration    Int?            // minutes
+  notes             String?         @db.Text
+  feedback          String?         @db.Text
+  rating            Int?            @db.SmallInt
+  recommendation    String?         @db.VarChar(50)
+  
+  // AI Data
+  aiScheduled       Boolean         @default(false)
+  aiAgentId         String?         @db.VarChar(100)
+  aiAnalysis        Json?           @db.Json
+  
+  // Calendar
+  calendarEventId   String?         @db.VarChar(200)
+  calendarLink      String?         @db.VarChar(500)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([jobId])
+  @@index([applicationId])
+  @@index([employerId])
+  @@index([candidateId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@map("interviews")
+}
+
+model Shift {
+  id                String          @id @default(cuid())
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workerId          String
+  worker            Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  employerId        String
+  employer          Employer        @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  
+  // Shift Details
+  shiftId           String          @unique @db.VarChar(50) // SFT-001
+  title             String          @db.VarChar(200)
+  description       String?         @db.Text
+  
+  // Scheduling
+  startTime         DateTime
+  endTime           DateTime
+  timezone          String          @default("UTC") @db.VarChar(50)
+  duration          Decimal         @db.Decimal(10, 2) // hours
+  
+  // Location
+  location          String?         @db.VarChar(200)
+  address           String?         @db.VarChar(500)
+  latitude          Decimal?        @db.Decimal(10, 8)
+  longitude         Decimal?        @db.Decimal(11, 8)
+  isRemote          Boolean         @default(false)
+  
+  // Pay
+  rate              Decimal         @db.Decimal(10, 2)
+  rateType          String          @default("HOURLY") @db.VarChar(20)
+  currency          String          @default("USD") @db.VarChar(3)
+  estimatedEarnings Decimal         @db.Decimal(10, 2)
+  
+  // Status
+  status            ShiftStatus     @default(PENDING)
+  checkedInAt       DateTime?
+  checkedOutAt      DateTime?
+  verifiedAt        DateTime?
+  
+  // Verification
+  checkInLocation   String?         @db.VarChar(500)
+  checkOutLocation  String?         @db.VarChar(500)
+  checkInLatitude   Decimal?        @db.Decimal(10, 8)
+  checkInLongitude  Decimal?        @db.Decimal(11, 8)
+  checkOutLatitude  Decimal?        @db.Decimal(10, 8)
+  checkOutLongitude Decimal?        @db.Decimal(11, 8)
+  
+  // Notes
+  workerNotes       String?         @db.Text
+  employerNotes     String?         @db.Text
+  systemNotes       String?         @db.Text
+  
+  // Relations
+  completedShift    CompletedShift?
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([jobId])
+  @@index([workerId])
+  @@index([employerId])
+  @@index([startTime])
+  @@index([status])
+  @@map("shifts")
+}
+
+model CompletedShift {
+  id                String          @id @default(cuid())
+  shiftId           String          @unique
+  shift             Shift           @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workerId          String
+  worker            Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  employerId        String
+  employer          Employer        @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  
+  // Completion Details
+  actualStartTime   DateTime
+  actualEndTime     DateTime
+  actualDuration    Decimal         @db.Decimal(10, 2) // hours
+  breakDuration     Decimal         @default(0) @db.Decimal(5, 2) // hours
+  
+  // Earnings
+  baseEarnings      Decimal         @db.Decimal(10, 2)
+  bonusEarnings     Decimal         @default(0) @db.Decimal(10, 2)
+  deductionEarnings Decimal         @default(0) @db.Decimal(10, 2)
+  totalEarnings     Decimal         @db.Decimal(10, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  
+  // Ratings
+  workerRating      Int?            @db.SmallInt
+  workerFeedback    String?         @db.Text
+  employerRating    Int?            @db.SmallInt
+  employerFeedback  String?         @db.Text
+  
+  // Verification
+  verifiedBy        String?         @db.VarChar(100)
+  verifiedAt        DateTime?
+  verificationMethod String?        @db.VarChar(50)
+  
+  // Dispute
+  disputed          Boolean         @default(false)
+  disputeReason     String?         @db.Text
+  disputeResolvedAt DateTime?
+  disputeResolution String?         @db.VarChar(50)
+  
+  // Payment
+  paymentId         String?
+  payment           Payment?        @relation(fields: [paymentId], references: [id])
+  paidAt            DateTime?
+  
+  // Metadata
+  metadata          Json?           @db.Json
+  
+  completedAt       DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([shiftId])
+  @@index([jobId])
+  @@index([workerId])
+  @@index([employerId])
+  @@index([completedAt])
+  @@map("completed_shifts")
+}
+
+// ======================================================
+// AI & MATCHING MODELS
+// ======================================================
+
+model AIAgent {
+  id                String          @id @default(cuid())
+  
+  // Agent Identity
+  agentId           String          @unique @db.VarChar(100)
+  name              String          @db.VarChar(200)
+  type              AgentType
+  version           String          @db.VarChar(50)
+  description       String?         @db.Text
+  
+  // Configuration
+  provider          String          @db.VarChar(50) // "DEEPSEEK", "OPENAI", "ANTHROPIC"
+  model             String          @db.VarChar(100)
+  temperature       Decimal         @db.Decimal(3, 2)
+  maxTokens         Int
+  promptTemplate    String?         @db.Text
+  systemPrompt      String?         @db.Text
+  
+  // Performance
+  status            AgentStatus     @default(IDLE)
+  lastActiveAt      DateTime?
+  totalCalls        Int             @default(0)
+  successfulCalls   Int             @default(0)
+  failedCalls       Int             @default(0)
+  avgResponseTime   Decimal?        @db.Decimal(10, 3) // seconds
+  successRate       Decimal?        @db.Decimal(5, 2)
+  
+  // Cost Tracking
+  costPerCall       Decimal?        @db.Decimal(10, 6)
+  totalCost         Decimal         @default(0) @db.Decimal(15, 6)
+  monthlyBudget     Decimal?        @db.Decimal(10, 2)
+  budgetUsed        Decimal         @default(0) @db.Decimal(10, 2)
+  
+  // Limits
+  rateLimitPerMinute Int           @default(60)
+  rateLimitPerHour   Int           @default(1000)
+  concurrentCalls    Int           @default(10)
+  
+  // Settings
+  isActive          Boolean         @default(true)
+  isPublic          Boolean         @default(false)
+  requiresAuth      Boolean         @default(true)
+  
+  // Relations
+  logs              AIAgentLog[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([agentId])
+  @@index([type])
+  @@index([status])
+  @@index([provider])
+  @@map("ai_agents")
+}
+
+model AIAgentLog {
+  id                String          @id @default(cuid())
+  agentId           String
+  agent             AIAgent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  // Execution Context
+  executionId       String          @unique @db.VarChar(100)
+  userId            String?
+  user              User?           @relation(fields: [userId], references: [id])
+  jobId             String?
+  job               Job?            @relation(fields: [jobId], references: [id])
+  applicationId     String?
+  application       Application?    @relation(fields: [applicationId], references: [id])
+  
+  // Request
+  requestType       String          @db.VarChar(50)
+  input             Json            @db.Json
+  promptTokens      Int?
+  
+  // Response
+  output            Json?           @db.Json
+  completionTokens  Int?
+  totalTokens       Int?
+  
+  // Performance
+  startedAt         DateTime
+  completedAt       DateTime?
+  duration          Decimal?        @db.Decimal(10, 3) // seconds
+  
+  // Status
+  status            String          @db.VarChar(50) // "SUCCESS", "FAILED", "TIMEOUT"
+  errorMessage      String?         @db.Text
+  errorCode         String?         @db.VarChar(100)
+  
+  // Cost
+  cost              Decimal?        @db.Decimal(10, 6)
+  currency          String          @default("USD") @db.VarChar(3)
+  
+  // Metadata
+  metadata          Json?           @db.Json
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([agentId])
+  @@index([userId])
+  @@index([jobId])
+  @@index([applicationId])
+  @@index([executionId])
+  @@index([requestType])
+  @@index([createdAt])
+  @@map("ai_agent_logs")
+}
+
+model JobMatch {
+  id                String          @id @default(cuid())
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workerId          String
+  worker            Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Matching Details
+  matchId           String          @unique @db.VarChar(50) // MATCH-001
+  agentId           String?
+  agent             AIAgent?        @relation(fields: [agentId], references: [id])
+  
+  // Scores
+  kfnScore          Decimal         @db.Decimal(5, 2) // 0-100
+  skillsScore       Decimal         @db.Decimal(5, 2)
+  experienceScore   Decimal         @db.Decimal(5, 2)
+  locationScore     Decimal         @db.Decimal(5, 2)
+  salaryScore       Decimal         @db.Decimal(5, 2)
+  availabilityScore Decimal         @db.Decimal(5, 2)
+  cultureScore      Decimal         @db.Decimal(5, 2)
+  
+  // Classification
+  matchType         MatchType
+  confidence        Decimal         @db.Decimal(5, 2) // 0-1
+  
+  // Analysis
+  strengths         String[]        @db.VarChar(200)[]
+  weaknesses        String[]        @db.VarChar(200)[]
+  recommendations   String[]        @db.VarChar(200)[]
+  reasoning         String?         @db.Text
+  
+  // Status
+  viewedByWorker    Boolean         @default(false)
+  viewedByEmployer  Boolean         @default(false)
+  applied           Boolean         @default(false)
+  shortlisted       Boolean         @default(false)
+  
+  // Dates
+  viewedAt          DateTime?
+  appliedAt         DateTime?
+  
+  // Metadata
+  metadata          Json?           @db.Json
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@unique([jobId, workerId])
+  @@index([jobId])
+  @@index([workerId])
+  @@index([userId])
+  @@index([kfnScore])
+  @@index([matchType])
+  @@index([createdAt])
+  @@map("job_matches")
+}
+
+model KFNScore {
+  id                String          @id @default(cuid())
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workerId          String
+  worker            Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Score Details
+  scoreId           String          @unique @db.VarChar(50) // KFN-001
+  version           String          @db.VarChar(20) // Algorithm version
+  
+  // Component Scores (0-100)
+  overallScore      Decimal         @db.Decimal(5, 2)
+  
+  skillsScore       Decimal         @db.Decimal(5, 2)
+  skillsBreakdown   Json            @db.Json
+  
+  experienceScore   Decimal         @db.Decimal(5, 2)
+  experienceBreakdown Json          @db.Json
+  
+  locationScore     Decimal         @db.Decimal(5, 2)
+  locationBreakdown Json            @db.Json
+  
+  salaryScore       Decimal         @db.Decimal(5, 2)
+  salaryBreakdown   Json            @db.Json
+  
+  availabilityScore Decimal         @db.Decimal(5, 2)
+  availabilityBreakdown Json        @db.Json
+  
+  cultureScore      Decimal         @db.Decimal(5, 2)
+  cultureBreakdown  Json            @db.Json
+  
+  // Fairness Metrics
+  biasScore         Decimal?        @db.Decimal(5, 2)
+  diversityScore    Decimal?        @db.Decimal(5, 2)
+  transparencyScore Decimal?        @db.Decimal(5, 2)
+  
+  // Recommendations
+  recommendation    String          @db.VarChar(50) // "STRONG_MATCH", "GOOD_MATCH", etc.
+  insights          String[]        @db.VarChar(500)[]
+  warnings          String[]        @db.VarChar(500)[]
+  
+  // Calculation Metadata
+  calculationTime   Decimal         @db.Decimal(10, 3) // seconds
+  dataPointsUsed    Int
+  agentId           String?
+  agent             AIAgent?        @relation(fields: [agentId], references: [id])
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@unique([jobId, workerId])
+  @@index([jobId])
+  @@index([workerId])
+  @@index([userId])
+  @@index([overallScore])
+  @@index([createdAt])
+  @@map("kfn_scores")
+}
+
+// ======================================================
+// FINANCIAL MODELS
+// ======================================================
+
+model Payment {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employerId        String?
+  employer          Employer?       @relation(fields: [employerId], references: [id])
+  workerId          String?
+  worker            Worker?         @relation(fields: [workerId], references: [id])
+  
+  // Payment Details
+  paymentId         String          @unique @db.VarChar(50) // PAY-001
+  stripeId          String?         @unique @db.VarChar(100)
+  stripeCustomerId  String?         @db.VarChar(100)
+  stripePaymentIntentId String?     @db.VarChar(100)
+  
+  // Amount
+  amount            Decimal         @db.Decimal(15, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  amountReceived    Decimal?        @db.Decimal(15, 2)
+  applicationFee    Decimal?        @db.Decimal(15, 2)
+  netAmount         Decimal?        @db.Decimal(15, 2)
+  
+  // Description
+  description       String?         @db.VarChar(500)
+  statementDescriptor String?       @db.VarChar(22)
+  
+  // Status
+  status            PaymentStatus   @default(PENDING)
+  statusMessage     String?         @db.VarChar(500)
+  
+  // Payment Method
+  paymentMethod     String?         @db.VarChar(50)
+  paymentMethodId   String?         @db.VarChar(100)
+  cardBrand         String?         @db.VarChar(50)
+  cardLast4         String?         @db.VarChar(4)
+  cardCountry       String?         @db.VarChar(2)
+  
+  // Billing Details
+  billingEmail      String?         @db.VarChar(255)
+  billingName       String?         @db.VarChar(200)
+  billingAddress    Json?           @db.Json
+  
+  // Dates
+  paidAt            DateTime?
+  refundedAt        DateTime?
+  
+  // Refunds
+  refundAmount      Decimal?        @db.Decimal(15, 2)
+  refundReason      String?         @db.VarChar(500)
+  
+  // Disputes
+  disputed          Boolean         @default(false)
+  disputeReason     String?         @db.VarChar(500)
+  disputeStatus     String?         @db.VarChar(50)
+  
+  // Metadata
+  metadata          Json?           @db.Json
+  
+  // Relations
+  subscription      Subscription?
+  completedShift    CompletedShift?
+  invoice           Invoice?
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([employerId])
+  @@index([workerId])
+  @@index([stripeId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Earning {
+  id                String          @id @default(cuid())
+  workerId          String
+  worker            Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employerId        String?
+  employer          Employer?       @relation(fields: [employerId], references: [id])
+  jobId             String?
+  job               Job?            @relation(fields: [jobId], references: [id])
+  shiftId           String?
+  shift             Shift?          @relation(fields: [shiftId], references: [id])
+  completedShiftId  String?         @unique
+  completedShift    CompletedShift? @relation(fields: [completedShiftId], references: [id])
+  
+  // Earning Details
+  earningId         String          @unique @db.VarChar(50) // EARN-001
+  type              String          @db.VarChar(50) // "SHIFT", "BONUS", "COMMISSION", "REFERRAL"
+  
+  // Amount
+  amount            Decimal         @db.Decimal(15, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  taxAmount         Decimal?        @db.Decimal(15, 2)
+  netAmount         Decimal         @db.Decimal(15, 2)
+  
+  // Status
+  status            String          @default("PENDING") @db.VarChar(50)
+  payableAt         DateTime?
+  paidAt            DateTime?
+  
+  // Payment
+  paymentId         String?
+  payment           Payment?        @relation(fields: [paymentId], references: [id])
+  
+  // Payout
+  payoutId          String?         @db.VarChar(100)
+  payoutMethod      String?         @db.VarChar(50)
+  payoutStatus      String?         @db.VarChar(50)
+  
+  // Description
+  description       String?         @db.VarChar(500)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([workerId])
+  @@index([userId])
+  @@index([employerId])
+  @@index([jobId])
+  @@index([shiftId])
+  @@index([status])
+  @@index([payableAt])
+  @@map("earnings")
+}
+
+model Transaction {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedUserId     String?         // For transfers
+  relatedUser       User?           @relation("TransactionRelatedUser", fields: [relatedUserId], references: [id])
+  
+  // Transaction Details
+  transactionId     String          @unique @db.VarChar(50) // TXN-001
+  referenceId       String?         @db.VarChar(100)
+  type              TransactionType
+  category          String          @db.VarChar(100)
+  
+  // Amount
+  amount            Decimal         @db.Decimal(15, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  fee               Decimal?        @db.Decimal(15, 2)
+  netAmount         Decimal         @db.Decimal(15, 2)
+  
+  // Balances
+  previousBalance   Decimal         @db.Decimal(15, 2)
+  newBalance        Decimal         @db.Decimal(15, 2)
+  
+  // Status
+  status            String          @default("COMPLETED") @db.VarChar(50)
+  statusMessage     String?         @db.VarChar(500)
+  
+  // Description
+  description       String          @db.VarChar(500)
+  metadata          Json?           @db.Json
+  
+  // Payment Method
+  paymentMethod     String?         @db.VarChar(50)
+  paymentGateway    String?         @db.VarChar(50)
+  
+  // Relations
+  payment           Payment?        @relation(fields: [paymentId], references: [id])
+  paymentId         String?
+  invoice           Invoice?        @relation(fields: [invoiceId], references: [id])
+  invoiceId         String?
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([relatedUserId])
+  @@index([type])
+  @@index([category])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Invoice {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employerId        String?
+  employer          Employer?       @relation(fields: [employerId], references: [id])
+  
+  // Invoice Details
+  invoiceId         String          @unique @db.VarChar(50) // INV-001
+  invoiceNumber     String          @unique @db.VarChar(100)
+  stripeInvoiceId   String?         @unique @db.VarChar(100)
+  
+  // Period
+  periodStart       DateTime
+  periodEnd         DateTime
+  dueDate           DateTime
+  
+  // Amounts
+  subtotal          Decimal         @db.Decimal(15, 2)
+  taxAmount         Decimal         @default(0) @db.Decimal(15, 2)
+  discountAmount    Decimal         @default(0) @db.Decimal(15, 2)
+  totalAmount       Decimal         @db.Decimal(15, 2)
+  amountPaid        Decimal         @default(0) @db.Decimal(15, 2)
+  amountDue         Decimal         @db.Decimal(15, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  
+  // Status
+  status            String          @default("DRAFT") @db.VarChar(50)
+  paidAt            DateTime?
+  voidedAt          DateTime?
+  
+  // Items
+  items             Json            @db.Json // Array of invoice line items
+  taxRate           Decimal?        @db.Decimal(5, 4)
+  
+  // Billing
+  billingEmail      String          @db.VarChar(255)
+  billingName       String          @db.VarChar(200)
+  billingAddress    Json            @db.Json
+  shippingAddress   Json?           @db.Json
+  
+  // Payment
+  paymentId         String?
+  payment           Payment?        @relation(fields: [paymentId], references: [id])
+  
+  // Files
+  pdfUrl            String?         @db.VarChar(500)
+  
+  // Notes
+  notes             String?         @db.Text
+  terms             String?         @db.Text
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([employerId])
+  @@index([invoiceNumber])
+  @@index([status])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+model Subscription {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employerId        String?
+  employer          Employer?       @relation(fields: [employerId], references: [id])
+  
+  // Subscription Details
+  subscriptionId    String          @unique @db.VarChar(50) // SUB-001
+  stripeSubscriptionId String?      @unique @db.VarChar(100)
+  stripeCustomerId  String?         @db.VarChar(100)
+  
+  // Plan
+  plan              SubscriptionPlan
+  status            SubscriptionStatus @default(TRIAL)
+  
+  // Pricing
+  amount            Decimal         @db.Decimal(15, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  interval          String          @default("month") @db.VarChar(20)
+  intervalCount     Int             @default(1)
+  
+  // Period
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialStart        DateTime?
+  trialEnd          DateTime?
+  cancelAtPeriodEnd Boolean         @default(false)
+  
+  // Cancellation
+  canceledAt        DateTime?
+  cancellationReason String?        @db.VarChar(500)
+  
+  // Limits
+  jobLimit          Int?
+  userLimit         Int?
+  storageLimit      Decimal?        @db.Decimal(15, 2) // MB
+  aiCreditLimit     Int?
+  
+  // Features
+  features          Json            @db.Json
+  
+  // Payment
+  latestInvoiceId   String?         @db.VarChar(100)
+  paymentId         String?
+  payment           Payment?        @relation(fields: [paymentId], references: [id])
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([employerId])
+  @@index([plan])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+// ======================================================
+// COMMUNICATION MODELS
+// ======================================================
+
+model Message {
+  id                String          @id @default(cuid())
+  senderId          String
+  sender            User            @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId        String
+  receiver          User            @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  // Conversation Context
+  conversationId    String          @db.VarChar(100)
+  parentMessageId   String?
+  parentMessage     Message?        @relation("MessageReplies", fields: [parentMessageId], references: [id])
+  replies           Message[]       @relation("MessageReplies")
+  
+  // Job Context
+  jobId             String?
+  job               Job?            @relation(fields: [jobId], references: [id])
+  applicationId     String?
+  application       Application?    @relation(fields: [applicationId], references: [id])
+  
+  // Content
+  messageType       String          @default("TEXT") @db.VarChar(50)
+  content           String          @db.Text
+  attachments       String[]        @db.VarChar(500)[]
+  
+  // Status
+  status            String          @default("SENT") @db.VarChar(50)
+  readAt            DateTime?
+  deliveredAt       DateTime?
+  
+  // Metadata
+  metadata          Json?           @db.Json
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([conversationId])
+  @@index([jobId])
+  @@index([applicationId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model Notification {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Notification Details
+  notificationId    String          @unique @db.VarChar(50) // NOTIF-001
+  type              NotificationType @default(IN_APP)
+  priority          NotificationPriority @default(MEDIUM)
+  category          String          @db.VarChar(100)
+  
+  // Content
+  title             String          @db.VarChar(200)
+  message           String          @db.Text
+  actionUrl         String?         @db.VarChar(500)
+  actionLabel       String?         @db.VarChar(100)
+  
+  // Context
+  relatedId         String?         @db.VarChar(100)
+  relatedType       String?         @db.VarChar(50)
+  metadata          Json?           @db.Json
+  
+  // Status
+  sentAt            DateTime?
+  readAt            DateTime?
+  clickedAt         DateTime?
+  
+  // Delivery
+  emailSent         Boolean         @default(false)
+  pushSent          Boolean         @default(false)
+  smsSent           Boolean         @default(false)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([type])
+  @@index([category])
+  @@index([readAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ======================================================
+// ENGAGEMENT MODELS
+// ======================================================
+
+model KarmaTransaction {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Transaction Details
+  karmaId           String          @unique @db.VarChar(50) // KARMA-001
+  action            KarmaAction
+  points            Int
+  runningTotal      Int
+  
+  // Context
+  relatedId         String?         @db.VarChar(100)
+  relatedType       String?         @db.VarChar(50)
+  description       String          @db.VarChar(500)
+  
+  // Verification
+  verifiedBy        String?         @db.VarChar(100)
+  verifiedAt        DateTime?
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([points])
+  @@index([createdAt])
+  @@map("karma_transactions")
+}
+
+model Review {
+  id                String          @id @default(cuid())
+  reviewerId        String
+  reviewer          User            @relation("Reviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  subjectId         String
+  subject           User            @relation("ReviewSubject", fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  // Context
+  jobId             String?
+  job               Job?            @relation(fields: [jobId], references: [id])
+  shiftId           String?
+  shift             Shift?          @relation(fields: [shiftId], references: [id])
+  
+  // Review Content
+  rating            Int             @db.SmallInt
+  title             String?         @db.VarChar(200)
+  content           String          @db.Text
+  strengths         String[]        @db.VarChar(200)[]
+  areasForImprovement String[]      @db.VarChar(200)[]
+  
+  // Response
+  response          String?         @db.Text
+  respondedAt       DateTime?
+  
+  // Status
+  status            ReviewStatus    @default(PENDING)
+  flaggedReason     String?         @db.VarChar(500)
+  
+  // Verification
+  isVerified        Boolean         @default(false)
+  verifiedAt        DateTime?
+  
+  // Reactions
+  helpfulCount      Int             @default(0)
+  reportCount       Int             @default(0)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@unique([reviewerId, subjectId, jobId])
+  @@index([reviewerId])
+  @@index([subjectId])
+  @@index([jobId])
+  @@index([rating])
+  @@index([status])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+// ======================================================
+// ADDITIONAL MODELS
+// ======================================================
+
+model Department {
+  id                String          @id @default(cuid())
+  employerId        String
+  employer          Employer        @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  
+  // Department Details
+  name              String          @db.VarChar(200)
+  description       String?         @db.Text
+  managerId         String?         @db.VarChar(100)
+  managerName       String?         @db.VarChar(200)
+  
+  // Settings
+  budget            Decimal?        @db.Decimal(15, 2)
+  headcount         Int?            @default(0)
+  
+  // Relations
+  jobs              Job[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@unique([employerId, name])
+  @@index([employerId])
+  @@index([name])
+  @@map("departments")
+}
+
+model Product {
+  id                String          @id @default(cuid())
+  sellerId          String
+  seller            Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  employerId        String?
+  employer          Employer?       @relation(fields: [employerId], references: [id])
+  
+  // Product Details
+  productId         String          @unique @db.VarChar(50) // PROD-001
+  name              String          @db.VarChar(200)
+  slug              String          @unique @db.VarChar(255)
+  description       String          @db.Text
+  type              ProductType     @default(SERVICE)
+  
+  // Pricing
+  price             Decimal         @db.Decimal(15, 2)
+  currency          String          @default("USD") @db.VarChar(3)
+  compareAtPrice    Decimal?        @db.Decimal(15, 2)
+  costPrice         Decimal?        @db.Decimal(15, 2)
+  
+  // Inventory
+  sku               String?         @unique @db.VarChar(100)
+  barcode           String?         @db.VarChar(100)
+  quantity          Int             @default(0)
+  lowStockThreshold Int?            @default(10)
+  trackInventory    Boolean         @default(true)
+  
+  // Digital Products
+  digitalFile       String?         @db.VarChar(500)
+  downloadLimit     Int?
+  downloadExpiry    Int?            // days
+  
+  // Shipping
+  weight            Decimal?        @db.Decimal(10, 2)
+  dimensions        Json?           @db.Json
+  
+  // Status
+  status            String          @default("DRAFT") @db.VarChar(50)
+  publishedAt       DateTime?
+  
+  // SEO
+  metaTitle         String?         @db.VarChar(200)
+  metaDescription   String?         @db.VarChar(500)
+  
+  // Media
+  images            String[]        @db.VarChar(500)[]
+  videos            String[]        @db.VarChar(500)[]
+  
+  // Categories
+  categories        String[]        @db.VarChar(100)[]
+  tags              String[]        @db.VarChar(50)[]
+  
+  // Stats
+  viewsCount        Int             @default(0)
+  purchasesCount    Int             @default(0)
+  avgRating         Decimal?        @db.Decimal(3, 2)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([sellerId])
+  @@index([employerId])
+  @@index([name])
+  @@index([type])
+  @@index([status])
+  @@fulltext([name, description])
+  @@map("products")
+}
+
+model ComplianceDoc {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employerId        String?
+  employer          Employer?       @relation(fields: [employerId], references: [id])
+  jobId             String?
+  job               Job?            @relation(fields: [jobId], references: [id])
+  
+  // Document Details
+  docId             String          @unique @db.VarChar(50) // DOC-001
+  type              String          @db.VarChar(100)
+  name              String          @db.VarChar(200)
+  description       String?         @db.Text
+  
+  // File
+  fileUrl           String          @db.VarChar(500)
+  fileType          String          @db.VarChar(50)
+  fileSize          Int
+  fileName          String          @db.VarChar(255)
+  
+  // Status
+  status            ComplianceStatus @default(PENDING)
+  verifiedBy        String?         @db.VarChar(100)
+  verifiedAt        DateTime?
+  expiryDate        DateTime?
+  renewalRequired   Boolean         @default(false)
+  
+  // Metadata
+  metadata          Json?           @db.Json
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([employerId])
+  @@index([jobId])
+  @@index([type])
+  @@index([status])
+  @@index([expiryDate])
+  @@map("compliance_docs")
+}
+
+model ActivityLog {
+  id                String          @id @default(cuid())
+  userId            String?
+  user              User?           @relation("UserActivity", fields: [userId], references: [id], onDelete: SetNull)
+  
+  // Activity Details
+  action            String          @db.VarChar(100)
+  entityType        String          @db.VarChar(50)
+  entityId          String?         @db.VarChar(100)
+  
+  // Changes
+  oldData           Json?           @db.Json
+  newData           Json?           @db.Json
+  changes           Json?           @db.Json
+  
+  // Context
+  ipAddress         String?         @db.VarChar(45)
+  userAgent         String?         @db.Text
+  location          String?         @db.VarChar(200)
+  
+  // Metadata
+  severity          String          @default("INFO") @db.VarChar(20)
+  source            String          @default("SYSTEM") @db.VarChar(50)
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ======================================================
+// PROFILE SUPPORT MODELS
+// ======================================================
+
+model Skill {
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  name              String          @db.VarChar(100)
+  category          String?         @db.VarChar(100)
+  level             Int             @default(3) @db.SmallInt // 1-5
+  yearsExperience   Int?
+  verified          Boolean         @default(false)
+  verifiedAt        DateTime?
+  verificationMethod String?        @db.VarChar(50)
+  
+  @@index([profileId])
+  @@index([name])
+  @@index([category])
+}
+
+model Education {
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  institution       String          @db.VarChar(200)
+  degree            String          @db.VarChar(200)
+  fieldOfStudy      String?         @db.VarChar(200)
+  grade             String?         @db.VarChar(50)
+  activities        String?         @db.Text
+  description       String?         @db.Text
+  
+  startDate         DateTime
+  endDate           DateTime?
+  isCurrent         Boolean         @default(false)
+  
+  location          String?         @db.VarChar(200)
+  
+  @@index([profileId])
+  @@index([institution])
+  @@index([degree])
+}
+
+model Experience {
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  title             String          @db.VarChar(200)
+  company           String          @db.VarChar(200)
+  employmentType    String          @db.VarChar(50)
+  location          String?         @db.VarChar(200)
+  locationType      String?         @db.VarChar(50)
+  
+  description       String?         @db.Text
+  achievements      String[]        @db.VarChar(500)[]
+  skillsUsed        String[]        @db.VarChar(100)[]
+  
+  startDate         DateTime
+  endDate           DateTime?
+  isCurrent         Boolean         @default(false)
+  
+  @@index([profileId])
+  @@index([title])
+  @@index([company])
+}
+
+model Certification {
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  name              String          @db.VarChar(200)
+  issuingOrganization String        @db.VarChar(200)
+  credentialId      String?         @db.VarChar(100)
+  credentialUrl     String?         @db.VarChar(500)
+  
+  issueDate         DateTime
+  expiryDate        DateTime?
+  doesNotExpire     Boolean         @default(false)
+  
+  verified          Boolean         @default(false)
+  
+  @@index([profileId])
+  @@index([name])
+}
+
+model Language {
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  language          String          @db.VarChar(100)
+  proficiency       String          @db.VarChar(50) // "BASIC", "INTERMEDIATE", "FLUENT", "NATIVE"
+  
+  @@index([profileId])
+  @@index([language])
+}
+
+model Portfolio {
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  title             String          @db.VarChar(200)
+  description       String?         @db.Text
+  url               String?         @db.VarChar(500)
+  fileUrl           String?         @db.VarChar(500)
+  thumbnail         String?         @db.VarChar(500)
+  
+  projectDate       DateTime?
+  tags              String[]        @db.VarChar(50)[]
+  
+  @@index([profileId])
+  @@index([title])
+}
+
+// ======================================================
+// REPORTING MODELS
+// ======================================================
+
+model Report {
+  id                String          @id @default(cuid())
+  reporterId        String
+  reporter          User            @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  subjectId         String
+  subject           User            @relation("ReportSubject", fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  // Report Details
+  reportId          String          @unique @db.VarChar(50) // RPT-001
+  type              ReportType
+  category          String          @db.VarChar(100)
+  description       String          @db.Text
+  evidence          String[]        @db.VarChar(500)[]
+  
+  // Status
+  status            ReportStatus    @default(PENDING)
+  assignedTo        String?         @db.VarChar(100)
+  priority          Int             @default(1) @db.SmallInt
+  
+  // Resolution
+  resolution        String?         @db.VarChar(50)
+  resolutionNotes   String?         @db.Text
+  resolvedAt        DateTime?
+  resolvedBy        String?         @db.VarChar(100)
+  
+  // Context
+  relatedId         String?         @db.VarChar(100)
+  relatedType       String?         @db.VarChar(50)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([reporterId])
+  @@index([subjectId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+// ======================================================
+// SETTINGS & CONFIGURATION
+// ======================================================
+
+model SystemConfig {
+  id                String          @id @default(cuid())
+  key               String          @unique @db.VarChar(100)
+  value             Json            @db.Json
+  type              String          @db.VarChar(50) // "string", "number", "boolean", "array", "object"
+  category          String          @db.VarChar(50)
+  description       String?         @db.VarChar(500)
+  isPublic          Boolean         @default(false)
+  isMutable         Boolean         @default(true)
+  
+  updatedAt         DateTime        @updatedAt
+  updatedBy         String?         @db.VarChar(100)
+  
+  @@index([key])
+  @@index([category])
+}
+
+model EmailTemplate {
+  id                String          @id @default(cuid())
+  templateId        String          @unique @db.VarChar(100)
+  name              String          @db.VarChar(200)
+  subject           String          @db.VarChar(500)
+  bodyHtml          String          @db.Text
+  bodyText          String          @db.Text
+  variables         String[]        @db.VarChar(100)[]
+  category          String          @db.VarChar(100)
+  isActive          Boolean         @default(true)
+  version           String          @db.VarChar(20)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  updatedBy         String?         @db.VarChar(100)
+  
+  @@index([templateId])
+  @@index([category])
+  @@index([isActive])
+}
+
+// ======================================================
+// AUDIT & BACKUP MODELS
+// ======================================================
+
+model AuditLog {
+  id                String          @id @default(cuid())
+  action            String          @db.VarChar(100)
+  entity            String          @db.VarChar(100)
+  entityId          String          @db.VarChar(100)
+  changes           Json            @db.Json
+  performedBy       String?         @db.VarChar(100)
+  performedById     String?
+  user              User?           @relation(fields: [performedById], references: [id], onDelete: SetNull)
+  ipAddress         String?         @db.VarChar(45)
+  userAgent         String?         @db.Text
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([action])
+  @@index([entity])
+  @@index([entityId])
+  @@index([performedById])
+  @@index([createdAt])
+}
+
+model DatabaseBackup {
+  id                String          @id @default(cuid())
+  filename          String          @db.VarChar(255)
+  path              String          @db.VarChar(500)
+  size              Int             // bytes
+  checksum          String          @db.VarChar(64)
+  type              String          @db.VarChar(50) // "FULL", "INCREMENTAL"
+  status            String          @db.VarChar(50) // "PENDING", "COMPLETED", "FAILED"
+  errorMessage      String?         @db.Text
+  createdBy         String?         @db.VarChar(100)
+  
+  createdAt         DateTime        @default(now())
+  completedAt       DateTime?
+  
+  @@index([filename])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ======================================================
+// END OF SCHEMA
+// ======================================================
