@@ -8,21 +8,44 @@
  */
 
 // ======================================================
-// 1. ENVIRONMENT VALIDATION
+// 1. ENVIRONMENT LOADING & VALIDATION
 // ======================================================
-require('dotenv').config({ path: `.env.${process.env.NODE_ENV || 'development'}` });
 
-// Check for required environment variables
-const requiredEnvVars = [
-  'NODE_ENV',
-  'PORT',
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'JWT_REFRESH_SECRET',
-  'APP_URL',
-  'API_URL',
-  'CORS_ORIGIN'
-];
+// Custom environment loader (replaces dotenv)
+const envLoader = require('./src/utils/env-loader');
+envLoader.load();
+
+// Access environment variables through loader
+const {
+  NODE_ENV,
+  PORT,
+  DATABASE_URL,
+  JWT_SECRET,
+  JWT_REFRESH_SECRET,
+  APP_URL,
+  API_URL,
+  CORS_ORIGIN,
+  ENABLE_AI_AGENTS,
+  ENABLE_EMAIL_NOTIFICATIONS,
+  ENABLE_PAYMENTS,
+  ENABLE_KFN_SCORING
+} = process.env;
+
+// Get additional info from envLoader
+console.log('✅ Environment loaded:', envLoader.env);
+console.log('📁 Config files loaded:', envLoader.getLoadedFiles());
+
+// Feature flags
+const FEATURES = {
+  AI_AGENTS: envLoader.get('ENABLE_AI_AGENTS', 'true') === 'true',
+  EMAIL_NOTIFICATIONS: envLoader.get('ENABLE_EMAIL_NOTIFICATIONS', 'true') === 'true',
+  PAYMENTS: envLoader.get('ENABLE_PAYMENTS', 'true') === 'true',
+  KFN_SCORING: envLoader.get('ENABLE_KFN_SCORING', 'true') === 'true'
+};
+
+// Log environment info
+systemLogger.info(`🚀 Starting in ${envLoader.isProduction() ? 'PRODUCTION' : envLoader.isDevelopment() ? 'DEVELOPMENT' : envLoader.env.toUpperCase()} mode`);
+systemLogger.info(`🔧 Features: AI=${FEATURES.AI_AGENTS}, Email=${FEATURES.EMAIL_NOTIFICATIONS}, Payments=${FEATURES.PAYMENTS}`);
 
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 if (missingEnvVars.length > 0) {
