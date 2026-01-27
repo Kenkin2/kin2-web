@@ -8,41 +8,52 @@
  */
 
 // ======================================================
-// 1. ENVIRONMENT LOADING & VALIDATION
+// 1. ENVIRONMENT VALIDATION
 // ======================================================
+require('dotenv').config({ path: `.env.${process.env.NODE_ENV || 'development'}` });
 
-// Custom environment loader (replaces dotenv)
-const envLoader = require('./src/utils/env-loader');
-envLoader.load();
+// Check for required environment variables
+const requiredEnvVars = [
+  'NODE_ENV',
+  'PORT',
+  'DATABASE_URL',
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'APP_URL',
+  'API_URL',
+  'CORS_ORIGIN'
+];
 
-// Access environment variables through loader
-const {
-  NODE_ENV,
-  PORT,
-  DATABASE_URL,
-  JWT_SECRET,
-  JWT_REFRESH_SECRET,
-  APP_URL,
-  API_URL,
-  CORS_ORIGIN,
-  ENABLE_AI_AGENTS,
-  ENABLE_EMAIL_NOTIFICATIONS,
-  ENABLE_PAYMENTS,
-  ENABLE_KFN_SCORING
-} = process.env;
-
-// Get additional info from envLoader
-console.log('✅ Environment loaded:', envLoader.env);
-console.log('📁 Config files loaded:', envLoader.getLoadedFiles());
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+if (missingEnvVars.length > 0) {
+  console.error('❌ Missing required environment variables:');
+  missingEnvVars.forEach(envVar => console.error(`   - ${envVar}`));
+  console.error('\nPlease check your .env file');
+  process.exit(1);
+}
 
 // Feature flags
 const FEATURES = {
-  AI_AGENTS: envLoader.get('ENABLE_AI_AGENTS', 'true') === 'true',
-  EMAIL_NOTIFICATIONS: envLoader.get('ENABLE_EMAIL_NOTIFICATIONS', 'true') === 'true',
-  PAYMENTS: envLoader.get('ENABLE_PAYMENTS', 'true') === 'true',
-  KFN_SCORING: envLoader.get('ENABLE_KFN_SCORING', 'true') === 'true'
+  AI_AGENTS: process.env.ENABLE_AI_AGENTS === 'true',
+  EMAIL_NOTIFICATIONS: process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true',
+  PAYMENTS: process.env.ENABLE_PAYMENTS === 'true',
+  KFN_SCORING: process.env.ENABLE_KFN_SCORING === 'true'
 };
+// ======================================================
+// 2. LOGGER INITIALIZATION
+// ======================================================
 
+// Initialize logger early
+const { systemLogger, requestLogger, securityLogger } = require('./src/utils/logger');
+
+// Log startup info
+systemLogger.info(`============================================`);
+systemLogger.info(`Kin2 Workforce Platform v2.5.0`);
+systemLogger.info(`Starting in ${envLoader.isProduction() ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
+systemLogger.info(`Port: ${envLoader.get('PORT')}`);
+systemLogger.info(`API URL: ${envLoader.get('API_URL')}`);
+systemLogger.info(`CORS Origin: ${envLoader.get('CORS_ORIGIN')}`);
+systemLogger.info(`============================================`);
 // Log environment info
 systemLogger.info(`🚀 Starting in ${envLoader.isProduction() ? 'PRODUCTION' : envLoader.isDevelopment() ? 'DEVELOPMENT' : envLoader.env.toUpperCase()} mode`);
 systemLogger.info(`🔧 Features: AI=${FEATURES.AI_AGENTS}, Email=${FEATURES.EMAIL_NOTIFICATIONS}, Payments=${FEATURES.PAYMENTS}`);
