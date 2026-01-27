@@ -1,0 +1,1141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== USER MANAGEMENT ==========
+enum UserRole {
+  WORKER
+  EMPLOYER
+  FREELANCER
+  VOLUNTEER
+  SELLER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+model User {
+  id                String          @id @default(cuid())
+  email             String          @unique
+  password          String
+  role              UserRole        @default(WORKER)
+  status            UserStatus      @default(PENDING_VERIFICATION)
+  
+  // Profile
+  profile           Profile?
+  
+  // Worker specific
+  workerProfile     WorkerProfile?
+  jobApplications   Application[]
+  savedJobs         SavedJob[]
+  workerSkills      WorkerSkill[]
+  
+  // Employer specific
+  employerProfile   EmployerProfile?
+  postedJobs        Job[]
+  companyReviews    CompanyReview[]
+  
+  // Freelancer specific
+  freelancerProfile FreelancerProfile?
+  freelancerSkills  FreelancerSkill[]
+  bids              Bid[]
+  freelancerPortfolio FreelancerPortfolio[]
+  
+  // Volunteer specific
+  volunteerProfile  VolunteerProfile?
+  volunteerApplications VolunteerApplication[]
+  volunteerHours    VolunteerHour[]
+  
+  // Seller specific
+  sellerProfile     SellerProfile?
+  products          Product[]
+  orders            Order[]
+  
+  // Common
+  notifications     Notification[]
+  messages          Message[]
+  payments          Payment[]
+  reviews           Review[]
+  verification      Verification?
+  loginHistory      LoginHistory[]
+  auditLogs         AuditLog[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  lastLogin         DateTime?
+  
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Profile {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id])
+  firstName         String
+  lastName          String
+  phone             String?
+  avatar            String?
+  bio               String?
+  location          String?
+  timezone          String?
+  language          String          @default("en")
+  currency          String          @default("USD")
+  notificationsEnabled Boolean       @default(true)
+  emailNotifications Boolean        @default(true)
+  pushNotifications  Boolean        @default(true)
+  twoFactorEnabled  Boolean         @default(false)
+  privacySettings   Json?
+  theme             String          @default("light")
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+}
+
+// ========== WORKER MODELS ==========
+model WorkerProfile {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id])
+  
+  // Professional info
+  headline          String?
+  summary           String?
+  currentJobTitle   String?
+  currentCompany    String?
+  
+  // Job preferences
+  employmentTypes   EmploymentType[]
+  preferredLocations String[]
+  remotePreference  RemotePreference @default(HYBRID)
+  salaryExpectationMin Int?
+  salaryExpectationMax Int?
+  currency          String          @default("USD")
+  noticePeriod      Int?            @default(30)
+  
+  // Availability
+  availability      AvailabilityStatus @default(AVAILABLE)
+  availableFrom     DateTime?
+  fullTime          Boolean         @default(true)
+  
+  // Metrics
+  kfnScore          Float?
+  totalApplications Int             @default(0)
+  interviews        Int             @default(0)
+  offers            Int             @default(0)
+  profileViews      Int             @default(0)
+  
+  // Files
+  resumeUrl         String?
+  coverLetter       String?
+  portfolioUrl      String?
+  videoIntroduction String?
+  
+  // Social
+  linkedInUrl       String?
+  githubUrl         String?
+  websiteUrl        String?
+  twitterUrl        String?
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([availability])
+}
+
+model WorkerSkill {
+  id                String          @id @default(cuid())
+  workerId          String
+  worker            User            @relation(fields: [workerId], references: [id])
+  skillId           String
+  skill             Skill           @relation(fields: [skillId], references: [id])
+  proficiency       ProficiencyLevel @default(INTERMEDIATE)
+  yearsOfExperience Int?            @default(1)
+  lastUsed          DateTime?
+  verified          Boolean         @default(false)
+  
+  @@unique([workerId, skillId])
+}
+
+model Experience {
+  id                String          @id @default(cuid())
+  workerId          String
+  worker            User            @relation(fields: [workerId], references: [id])
+  title             String
+  company           String
+  location          String?
+  employmentType    EmploymentType
+  startDate         DateTime
+  endDate           DateTime?
+  current           Boolean         @default(false)
+  description       String?
+  achievements      String[]
+  
+  @@index([workerId])
+}
+
+model Education {
+  id                String          @id @default(cuid())
+  workerId          String
+  worker            User            @relation(fields: [workerId], references: [id])
+  institution       String
+  degree            String
+  fieldOfStudy      String
+  startDate         DateTime
+  endDate           DateTime?
+  grade             String?
+  description       String?
+  
+  @@index([workerId])
+}
+
+model Certification {
+  id                String          @id @default(cuid())
+  workerId          String
+  worker            User            @relation(fields: [workerId], references: [id])
+  name              String
+  issuer            String
+  issueDate         DateTime
+  expirationDate    DateTime?
+  credentialId      String?
+  credentialUrl     String?
+  
+  @@index([workerId])
+}
+
+// ========== EMPLOYER MODELS ==========
+model EmployerProfile {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id])
+  
+  // Company info
+  companyName       String
+  companyLogo       String?
+  companyWebsite    String?
+  companySize       CompanySize
+  industry          String
+  description       String?
+  foundedYear       Int?
+  
+  // Location
+  headquarters      String?
+  locations         String[]
+  
+  // Social
+  linkedInUrl       String?
+  twitterUrl        String?
+  facebookUrl       String?
+  
+  // Metrics
+  totalJobsPosted   Int             @default(0)
+  totalHires        Int             @default(0)
+  responseRate      Float           @default(0)
+  avgTimeToHire     Int?            // in days
+  
+  // Verification
+  verified          Boolean         @default(false)
+  verificationDate  DateTime?
+  
+  // Billing
+  subscriptionPlan  SubscriptionPlan @default(FREE)
+  subscriptionEnds  DateTime?
+  billingEmail      String?
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+  @@index([companyName])
+}
+
+model CompanyReview {
+  id                String          @id @default(cuid())
+  companyId         String
+  company           EmployerProfile @relation(fields: [companyId], references: [id])
+  reviewerId        String
+  reviewer          User            @relation(fields: [reviewerId], references: [id])
+  rating            Float           @range(1, 5)
+  title             String
+  content           String
+  pros              String[]
+  cons              String[]
+  employmentStatus  EmploymentStatus
+  jobTitle          String
+  location          String?
+  isCurrentEmployee Boolean         @default(false)
+  helpfulCount      Int             @default(0)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@unique([companyId, reviewerId])
+  @@index([companyId])
+}
+
+// ========== JOB MODELS ==========
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  EXPIRED
+  ARCHIVED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERNSHIP
+  VOLUNTEER
+}
+
+enum RemotePreference {
+  ONSITE
+  REMOTE
+  HYBRID
+}
+
+model Job {
+  id                String          @id @default(cuid())
+  
+  // Basic info
+  title             String
+  slug              String          @unique
+  description       String
+  requirements      String
+  responsibilities  String
+  benefits          String?
+  
+  // Details
+  employmentType    EmploymentType
+  experienceLevel   ExperienceLevel
+  remotePreference  RemotePreference
+  location          String
+  coordinates       Json?           // { lat, lng }
+  
+  // Salary
+  salaryMin         Int?
+  salaryMax         Int?
+  salaryCurrency    String          @default("USD")
+  salaryType        SalaryType      @default(YEARLY)
+  equityOffered     Boolean         @default(false)
+  bonusOffered      Boolean         @default(false)
+  
+  // Metadata
+  status            JobStatus       @default(DRAFT)
+  visibility        Visibility      @default(PUBLIC)
+  urgency           UrgencyLevel    @default(NORMAL)
+  
+  // Relationships
+  employerId        String
+  employer          User            @relation(fields: [employerId], references: [id])
+  categoryId        String
+  category          Category        @relation(fields: [categoryId], references: [id])
+  industryId        String
+  industry          Industry        @relation(fields: [industryId], references: [id])
+  
+  // Skills required
+  requiredSkills    JobSkill[]
+  preferredSkills   JobSkill[]
+  
+  // Applications
+  applications      Application[]
+  views             Int             @default(0)
+  applicationsCount Int             @default(0)
+  
+  // Dates
+  postedDate        DateTime        @default(now())
+  expirationDate    DateTime?
+  closedDate        DateTime?
+  
+  // SEO
+  metaTitle         String?
+  metaDescription   String?
+  keywords          String[]
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([employerId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([postedDate])
+  @@index([location])
+  @@index([employmentType])
+}
+
+model JobSkill {
+  id                String          @id @default(cuid())
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id])
+  skillId           String
+  skill             Skill           @relation(fields: [skillId], references: [id])
+  isRequired        Boolean         @default(true)
+  importance        Int             @default(1) // 1-5
+  
+  @@unique([jobId, skillId])
+}
+
+model Category {
+  id                String          @id @default(cuid())
+  name              String          @unique
+  slug              String          @unique
+  description       String?
+  icon              String?
+  parentId          String?
+  parent            Category?       @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children          Category[]      @relation("CategoryToCategory")
+  jobs              Job[]
+  
+  @@index([slug])
+}
+
+model Industry {
+  id                String          @id @default(cuid())
+  name              String          @unique
+  slug              String          @unique
+  description       String?
+  icon              String?
+  categories        Category[]
+  jobs              Job[]
+  
+  @@index([slug])
+}
+
+model Skill {
+  id                String          @id @default(cuid())
+  name              String          @unique
+  slug              String          @unique
+  category          String?
+  description       String?
+  popularity        Int             @default(0)
+  verified          Boolean         @default(false)
+  
+  // Relationships
+  jobSkills         JobSkill[]
+  workerSkills      WorkerSkill[]
+  freelancerSkills  FreelancerSkill[]
+  
+  @@index([slug])
+  @@index([category])
+}
+
+// ========== APPLICATION MODELS ==========
+enum ApplicationStatus {
+  PENDING
+  REVIEWING
+  SHORTLISTED
+  INTERVIEWING
+  OFFERED
+  HIRED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+model Application {
+  id                String          @id @default(cuid())
+  
+  // Relationships
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id])
+  applicantId       String
+  applicant         User            @relation(fields: [applicantId], references: [id])
+  
+  // Application content
+  coverLetter       String?
+  resumeUrl         String?
+  portfolioUrl      String?
+  answers           Json?           // Answers to custom questions
+  
+  // Status & Tracking
+  status            ApplicationStatus @default(PENDING)
+  statusChangedAt   DateTime?
+  statusChangedBy   String?
+  
+  // AI Analysis
+  kfnScore          Float?
+  aiAnalysis        Json?
+  aiRecommendation  RecommendationLevel?
+  strengths         String[]
+  weaknesses        String[]
+  
+  // Employer actions
+  rating            Int?            @range(1, 5)
+  notes             String?
+  
+  // Communication
+  messages          ApplicationMessage[]
+  interviews        Interview[]
+  
+  // Dates
+  appliedAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@unique([jobId, applicantId])
+  @@index([applicantId])
+  @@index([jobId])
+  @@index([status])
+  @@index([appliedAt])
+}
+
+model ApplicationMessage {
+  id                String          @id @default(cuid())
+  applicationId     String
+  application       Application     @relation(fields: [applicationId], references: [id])
+  senderId          String
+  sender            User            @relation(fields: [senderId], references: [id])
+  recipientId       String
+  recipient         User            @relation(fields: [recipientId], references: [id])
+  message           String
+  read              Boolean         @default(false)
+  attachments       String[]
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([applicationId])
+  @@index([senderId])
+  @@index([recipientId])
+}
+
+model Interview {
+  id                String          @id @default(cuid())
+  applicationId     String
+  application       Application     @relation(fields: [applicationId], references: [id])
+  
+  // Details
+  type              InterviewType
+  stage             String
+  status            InterviewStatus @default(SCHEDULED)
+  
+  // Scheduling
+  scheduledDate     DateTime
+  duration          Int             // minutes
+  timezone          String
+  
+  // Participants
+  interviewerId     String?
+  interviewer       User?           @relation("Interviewer", fields: [interviewerId], references: [id])
+  participantIds    String[]
+  participants      User[]          @relation("InterviewParticipants")
+  
+  // Location/Platform
+  location          String?
+  meetingUrl        String?
+  platform          String?
+  
+  // Notes
+  notes             String?
+  feedback          String?
+  rating            Int?            @range(1, 5)
+  
+  // Dates
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([applicationId])
+  @@index([scheduledDate])
+}
+
+// ========== AI & KFN MODELS ==========
+model KFNCalculation {
+  id                String          @id @default(cuid())
+  
+  // Relationships
+  workerId          String
+  worker            User            @relation(fields: [workerId], references: [id])
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id])
+  applicationId     String?
+  application       Application?    @relation(fields: [applicationId], references: [id])
+  
+  // Scores
+  overallScore      Float           @range(0, 100)
+  skillsScore       Float           @range(0, 30)
+  experienceScore   Float           @range(0, 25)
+  locationScore     Float           @range(0, 15)
+  availabilityScore Float           @range(0, 15)
+  educationScore    Float           @range(0, 10)
+  culturalScore     Float           @range(0, 5)
+  
+  // Details
+  skillMatches      Json
+  experienceMatches Json
+  locationMatch     Json
+  availabilityMatch Json
+  educationMatch    Json
+  culturalMatch     Json
+  
+  // Recommendations
+  recommendation    RecommendationLevel
+  confidence        Float           @range(0, 1)
+  strengths         String[]
+  areasToImprove    String[]
+  
+  createdAt         DateTime        @default(now())
+  
+  @@unique([workerId, jobId])
+  @@index([workerId])
+  @@index([jobId])
+  @@index([overallScore])
+}
+
+model AIAnalysis {
+  id                String          @id @default(cuid())
+  
+  // What's being analyzed
+  type              AIAnalysisType
+  contentId         String
+  contentType       String
+  
+  // Analysis results
+  analysis          Json
+  summary           String
+  keywords          String[]
+  sentiment         Float?          @range(-1, 1)
+  confidence        Float           @range(0, 1)
+  
+  // Metadata
+  modelUsed         String
+  tokensUsed        Int
+  cost              Float?
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([contentId, contentType])
+  @@index([type])
+}
+
+// ========== PAYMENT MODELS ==========
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER
+  PAYPAL
+  STRIPE
+  WALLET
+}
+
+model Payment {
+  id                String          @id @default(cuid())
+  
+  // Transaction info
+  transactionId     String          @unique
+  amount            Float
+  currency          String          @default("USD")
+  status            PaymentStatus   @default(PENDING)
+  method            PaymentMethod
+  
+  // Relationships
+  payerId           String
+  payer             User            @relation(fields: [payerId], references: [id])
+  recipientId       String?
+  recipient         User?           @relation("PaymentRecipient", fields: [recipientId], references: [id])
+  
+  // What's being paid for
+  type              PaymentType
+  referenceId       String?         // Job ID, Subscription ID, etc.
+  description       String
+  
+  // Payment gateway data
+  gateway           String
+  gatewayData       Json
+  gatewayResponse   Json?
+  
+  // Tax
+  taxAmount         Float           @default(0)
+  taxRate           Float           @default(0)
+  
+  // Dates
+  initiatedAt       DateTime        @default(now())
+  completedAt       DateTime?
+  refundedAt        DateTime?
+  
+  @@index([payerId])
+  @@index([recipientId])
+  @@index([status])
+  @@index([initiatedAt])
+}
+
+model Subscription {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id])
+  
+  // Plan details
+  plan              SubscriptionPlan
+  price             Float
+  currency          String          @default("USD")
+  billingCycle      BillingCycle    @default(MONTHLY)
+  
+  // Status
+  status            SubscriptionStatus @default(ACTIVE)
+  autoRenew         Boolean         @default(true)
+  
+  // Dates
+  startDate         DateTime        @default(now())
+  endDate           DateTime
+  nextBillingDate   DateTime
+  cancelledAt       DateTime?
+  
+  // Payment method
+  paymentMethodId   String?
+  lastPaymentId     String?
+  lastPayment       Payment?        @relation(fields: [lastPaymentId], references: [id])
+  
+  @@index([userId])
+  @@index([status])
+  @@index([endDate])
+}
+
+model Invoice {
+  id                String          @id @default(cuid())
+  
+  // Basic info
+  invoiceNumber     String          @unique
+  status            InvoiceStatus   @default(DRAFT)
+  
+  // Relationships
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
+  subscriptionId    String?
+  subscription      Subscription?   @relation(fields: [subscriptionId], references: [id])
+  paymentId         String?
+  payment           Payment?        @relation(fields: [paymentId], references: [id])
+  
+  // Amounts
+  subtotal          Float
+  taxAmount         Float           @default(0)
+  total             Float
+  currency          String          @default("USD")
+  
+  // Items
+  items             Json            // Array of invoice items
+  
+  // Dates
+  issueDate         DateTime        @default(now())
+  dueDate           DateTime
+  paidDate          DateTime?
+  
+  // PDF
+  pdfUrl            String?
+  
+  @@index([userId])
+  @@index([invoiceNumber])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// ========== NOTIFICATION MODELS ==========
+enum NotificationType {
+  APPLICATION_UPDATE
+  JOB_MATCH
+  MESSAGE
+  INTERVIEW_INVITE
+  PAYMENT_RECEIVED
+  SYSTEM_ALERT
+  SECURITY_ALERT
+}
+
+enum NotificationChannel {
+  EMAIL
+  PUSH
+  SMS
+  IN_APP
+}
+
+model Notification {
+  id                String          @id @default(cuid())
+  
+  // Recipient
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
+  
+  // Content
+  type              NotificationType
+  title             String
+  message           String
+  data              Json?           // Additional data
+  
+  // Channels
+  channels          NotificationChannel[]
+  emailSent         Boolean         @default(false)
+  pushSent          Boolean         @default(false)
+  smsSent           Boolean         @default(false)
+  inAppSent         Boolean         @default(false)
+  
+  // Status
+  read              Boolean         @default(false)
+  clicked           Boolean         @default(false)
+  archived          Boolean         @default(false)
+  
+  // Metadata
+  priority          Priority        @default(NORMAL)
+  category          String?
+  actionUrl         String?
+  
+  createdAt         DateTime        @default(now())
+  readAt            DateTime?
+  
+  @@index([userId])
+  @@index([type])
+  @@index([read])
+  @@index([createdAt])
+}
+
+model NotificationPreference {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id])
+  
+  // Channel preferences
+  emailEnabled      Boolean         @default(true)
+  pushEnabled       Boolean         @default(true)
+  smsEnabled        Boolean         @default(false)
+  inAppEnabled      Boolean         @default(true)
+  
+  // Type preferences
+  applicationUpdates Boolean        @default(true)
+  jobMatches        Boolean         @default(true)
+  messages          Boolean         @default(true)
+  interviewInvites  Boolean         @default(true)
+  paymentUpdates    Boolean         @default(true)
+  systemAlerts      Boolean         @default(true)
+  marketing         Boolean         @default(false)
+  
+  // Quiet hours
+  quietHoursStart   Int?            @range(0, 23)
+  quietHoursEnd     Int?            @range(0, 23)
+  
+  updatedAt         DateTime        @updatedAt
+  
+  @@index([userId])
+}
+
+// ========== ANALYTICS MODELS ==========
+model AnalyticsEvent {
+  id                String          @id @default(cuid())
+  
+  // Who & What
+  userId            String?
+  user              User?           @relation(fields: [userId], references: [id])
+  eventType         String
+  eventCategory     String
+  
+  // Data
+  properties        Json
+  sessionId         String?
+  device            Json?
+  
+  // Location
+  ipAddress         String?
+  userAgent         String?
+  referrer          String?
+  url               String?
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([sessionId])
+}
+
+model UserAnalytics {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id])
+  
+  // Engagement
+  totalLogins       Int             @default(0)
+  lastLogin         DateTime?
+  avgSessionDuration Int?           // seconds
+  totalSessions     Int             @default(0)
+  
+  // Job search
+  jobsViewed        Int             @default(0)
+  jobsApplied       Int             @default(0)
+  jobsSaved         Int             @default(0)
+  searchQueries     Int             @default(0)
+  
+  // Profile
+  profileViews      Int             @default(0)
+  profileCompleteness Float         @default(0)
+  
+  // Conversion
+  applicationRate   Float           @default(0)
+  interviewRate     Float           @default(0)
+  offerRate         Float           @default(0)
+  
+  // Dates
+  firstActivity     DateTime?
+  lastActivity      DateTime?
+  
+  updatedAt         DateTime        @updatedAt
+}
+
+model PlatformAnalytics {
+  id                String          @id @default(cuid())
+  
+  // Date range
+  date              DateTime        @unique
+  period            AnalyticsPeriod @default(DAILY)
+  
+  // User metrics
+  totalUsers        Int             @default(0)
+  newUsers          Int             @default(0)
+  activeUsers       Int             @default(0)
+  returningUsers    Int             @default(0)
+  
+  // Job metrics
+  totalJobs         Int             @default(0)
+  newJobs           Int             @default(0)
+  jobViews          Int             @default(0)
+  applications      Int             @default(0)
+  
+  // Match metrics
+  matches           Int             @default(0)
+  avgKFNScore       Float           @default(0)
+  successfulMatches Int             @default(0)
+  
+  // Revenue
+  revenue           Float           @default(0)
+  transactions      Int             @default(0)
+  avgTransaction    Float           @default(0)
+  
+  // Performance
+  avgResponseTime   Float           @default(0) // ms
+  errorRate         Float           @default(0)
+  
+  createdAt         DateTime        @default(now())
+}
+
+// ========== ADMIN MODELS ==========
+model AdminLog {
+  id                String          @id @default(cuid())
+  
+  // Who did it
+  adminId           String
+  admin             User            @relation(fields: [adminId], references: [id])
+  
+  // What was done
+  action            String
+  resourceType      String
+  resourceId        String?
+  
+  // Changes
+  oldData           Json?
+  newData           Json?
+  changes           Json?
+  
+  // Where
+  ipAddress         String?
+  userAgent         String?
+  
+  createdAt         DateTime        @default(now())
+  
+  @@index([adminId])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  id                String          @id @default(cuid())
+  key               String          @unique
+  value             Json
+  type              SettingType
+  category          String
+  description       String?
+  editable          Boolean         @default(true)
+  version           Int             @default(1)
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  updatedBy         String?
+  
+  @@index([key])
+  @@index([category])
+}
+
+// ========== ENUMS ==========
+enum AvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+  SOON
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum ExperienceLevel {
+  ENTRY
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  EXECUTIVE
+}
+
+enum SalaryType {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum Visibility {
+  PUBLIC
+  PRIVATE
+  INTERNAL
+}
+
+enum UrgencyLevel {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  IN_PERSON
+  TECHNICAL
+  BEHAVIORAL
+  PANEL
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  RESCHEDULED
+}
+
+enum RecommendationLevel {
+  STRONGLY_RECOMMEND
+  RECOMMEND
+  CONSIDER
+  NOT_RECOMMEND
+  REJECT
+}
+
+enum AIAnalysisType {
+  RESUME
+  JOB_DESCRIPTION
+  COVER_LETTER
+  PROFILE
+  SKILLS
+  MATCHING
+}
+
+enum PaymentType {
+  SUBSCRIPTION
+  JOB_POSTING
+  FEATURED_JOB
+  RESUME_REVIEW
+  BACKGROUND_CHECK
+  CERTIFICATION
+  COMMISSION
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+  TRIAL
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum AnalyticsPeriod {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+  ARRAY
+}
+
+enum EmploymentStatus {
+  FULL_TIME
+  PART_TIME
+  FORMER
+  CONTRACT
+}
+
+enum CompanySize {
+  MICRO
+  SMALL
+  MEDIUM
+  LARGE
+  ENTERPRISE
+}
