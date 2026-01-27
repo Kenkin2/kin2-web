@@ -1,0 +1,316 @@
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('🌱 Starting database seeding...');
+
+  // Clean up existing data
+  await prisma.user.deleteMany({});
+  console.log('✅ Cleared existing data');
+
+  // Create admin user
+  const adminPassword = await bcrypt.hash('Admin@123', 10);
+  const admin = await prisma.user.create({
+    data: {
+      email: 'admin@kin2.com',
+      password: adminPassword,
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      profile: {
+        create: {
+          firstName: 'Admin',
+          lastName: 'User',
+          phone: '+1234567890',
+          location: 'San Francisco, CA',
+          bio: 'Platform Administrator'
+        }
+      }
+    }
+  });
+  console.log('✅ Created admin user');
+
+  // Create test employer
+  const employerPassword = await bcrypt.hash('Employer@123', 10);
+  const employer = await prisma.user.create({
+    data: {
+      email: 'employer@techcorp.com',
+      password: employerPassword,
+      role: 'EMPLOYER',
+      status: 'ACTIVE',
+      profile: {
+        create: {
+          firstName: 'John',
+          lastName: 'Employer',
+          phone: '+1234567891',
+          location: 'New York, NY'
+        }
+      },
+      employerProfile: {
+        create: {
+          companyName: 'TechCorp Inc.',
+          companySize: 'MEDIUM',
+          industry: 'Technology',
+          description: 'Leading tech company specializing in AI solutions',
+          locations: ['New York, NY', 'San Francisco, CA', 'Remote'],
+          verified: true
+        }
+      }
+    }
+  });
+  console.log('✅ Created employer user');
+
+  // Create test worker
+  const workerPassword = await bcrypt.hash('Worker@123', 10);
+  const worker = await prisma.user.create({
+    data: {
+      email: 'john.doe@example.com',
+      password: workerPassword,
+      role: 'WORKER',
+      status: 'ACTIVE',
+      profile: {
+        create: {
+          firstName: 'John',
+          lastName: 'Doe',
+          phone: '+1234567892',
+          location: 'San Francisco, CA',
+          bio: 'Senior Software Engineer with 8+ years of experience'
+        }
+      },
+      workerProfile: {
+        create: {
+          headline: 'Senior Full Stack Developer',
+          summary: 'Passionate about building scalable web applications',
+          currentJobTitle: 'Senior Developer',
+          currentCompany: 'Current Tech Inc.',
+          employmentTypes: ['FULL_TIME', 'CONTRACT'],
+          preferredLocations: ['Remote', 'San Francisco, CA'],
+          remotePreference: 'HYBRID',
+          salaryExpectationMin: 120000,
+          salaryExpectationMax: 180000,
+          availability: 'AVAILABLE',
+          fullTime: true
+        }
+      }
+    }
+  });
+  console.log('✅ Created worker user');
+
+  // Create categories
+  const categories = await Promise.all([
+    prisma.category.create({
+      data: {
+        name: 'Software Development',
+        slug: 'software-development',
+        description: 'Software engineering and development roles'
+      }
+    }),
+    prisma.category.create({
+      data: {
+        name: 'Design',
+        slug: 'design',
+        description: 'Design and creative roles'
+      }
+    }),
+    prisma.category.create({
+      data: {
+        name: 'Marketing',
+        slug: 'marketing',
+        description: 'Marketing and advertising roles'
+      }
+    })
+  ]);
+  console.log('✅ Created categories');
+
+  // Create industries
+  const industries = await Promise.all([
+    prisma.industry.create({
+      data: {
+        name: 'Technology',
+        slug: 'technology',
+        description: 'Technology and software companies'
+      }
+    }),
+    prisma.industry.create({
+      data: {
+        name: 'Finance',
+        slug: 'finance',
+        description: 'Banking and financial services'
+      }
+    })
+  ]);
+  console.log('✅ Created industries');
+
+  // Create skills
+  const skills = await Promise.all([
+    prisma.skill.create({
+      data: {
+        name: 'JavaScript',
+        slug: 'javascript',
+        category: 'Programming'
+      }
+    }),
+    prisma.skill.create({
+      data: {
+        name: 'React',
+        slug: 'react',
+        category: 'Frontend'
+      }
+    }),
+    prisma.skill.create({
+      data: {
+        name: 'Node.js',
+        slug: 'node-js',
+        category: 'Backend'
+      }
+    }),
+    prisma.skill.create({
+      data: {
+        name: 'Python',
+        slug: 'python',
+        category: 'Programming'
+      }
+    }),
+    prisma.skill.create({
+      data: {
+        name: 'UI/UX Design',
+        slug: 'ui-ux-design',
+        category: 'Design'
+      }
+    })
+  ]);
+  console.log('✅ Created skills');
+
+  // Create sample job
+  const job = await prisma.job.create({
+    data: {
+      title: 'Senior Full Stack Developer',
+      slug: 'senior-full-stack-developer-remote-2024',
+      description: 'We are looking for an experienced Full Stack Developer to join our team...',
+      requirements: '5+ years of experience with JavaScript, React, and Node.js...',
+      responsibilities: 'Develop and maintain web applications, collaborate with team...',
+      employmentType: 'FULL_TIME',
+      experienceLevel: 'SENIOR',
+      remotePreference: 'REMOTE',
+      location: 'Remote',
+      salaryMin: 120000,
+      salaryMax: 180000,
+      status: 'PUBLISHED',
+      employerId: employer.id,
+      categoryId: categories[0].id,
+      industryId: industries[0].id,
+      requiredSkills: {
+        create: [
+          {
+            skillId: skills[0].id,
+            isRequired: true,
+            importance: 5
+          },
+          {
+            skillId: skills[1].id,
+            isRequired: true,
+            importance: 5
+          },
+          {
+            skillId: skills[2].id,
+            isRequired: true,
+            importance: 4
+          }
+        ]
+      }
+    }
+  });
+  console.log('✅ Created sample job');
+
+  // Create sample application
+  const application = await prisma.application.create({
+    data: {
+      jobId: job.id,
+      applicantId: worker.id,
+      coverLetter: 'I am excited to apply for this position...',
+      status: 'PENDING'
+    }
+  });
+  console.log('✅ Created sample application');
+
+  // Create KFN calculation
+  const kfn = await prisma.kFNCalculation.create({
+    data: {
+      workerId: worker.id,
+      jobId: job.id,
+      applicationId: application.id,
+      overallScore: 85.5,
+      skillsScore: 25,
+      experienceScore: 20,
+      locationScore: 15,
+      availabilityScore: 14,
+      educationScore: 8,
+      culturalScore: 4.5,
+      recommendation: 'STRONGLY_RECOMMEND',
+      confidence: 0.9,
+      strengths: ['Strong JavaScript skills', 'Relevant experience', 'Good cultural fit'],
+      areasToImprove: ['Could improve in testing', 'Limited AWS experience']
+    }
+  });
+  console.log('✅ Created KFN calculation');
+
+  // Create system settings
+  const settings = await Promise.all([
+    prisma.systemSetting.create({
+      data: {
+        key: 'platform.name',
+        value: 'Kin2 Workforce Platform',
+        type: 'STRING',
+        category: 'General',
+        description: 'Platform display name'
+      }
+    }),
+    prisma.systemSetting.create({
+      data: {
+        key: 'platform.currency',
+        value: 'USD',
+        type: 'STRING',
+        category: 'Payment',
+        description: 'Default currency'
+      }
+    }),
+    prisma.systemSetting.create({
+      data: {
+        key: 'ai.enabled',
+        value: true,
+        type: 'BOOLEAN',
+        category: 'AI',
+        description: 'Enable AI features'
+      }
+    }),
+    prisma.systemSetting.create({
+      data: {
+        key: 'email.smtp.enabled',
+        value: true,
+        type: 'BOOLEAN',
+        category: 'Email',
+        description: 'Enable SMTP email'
+      }
+    })
+  ]);
+  console.log('✅ Created system settings');
+
+  console.log('🎉 Database seeding completed!');
+  console.log('\n📋 Sample Data Created:');
+  console.log('   👑 Admin: admin@kin2.com / Admin@123');
+  console.log('   🏢 Employer: employer@techcorp.com / Employer@123');
+  console.log('   👷 Worker: john.doe@example.com / Worker@123');
+  console.log('   💼 Job: Senior Full Stack Developer');
+  console.log('   📄 Application: 1 sample application');
+  console.log('   📊 KFN: Sample calculation with 85.5 score');
+}
+
+main()
+  .catch((e) => {
+    console.error('❌ Seeding error:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
