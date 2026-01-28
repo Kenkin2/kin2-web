@@ -1,0 +1,959 @@
+class DocumentRepository {
+  constructor(prisma, redis, storageService, aiService) {
+    this.prisma = prisma;
+    this.redis = redis;
+    this.storageService = storageService;
+    this.aiService = aiService;
+    this.CACHE_TTL = 1800; // 30 minutes
+  }
+
+  // DOCUMENT UPLOAD AND MANAGEMENT
+  async uploadDocument(data) {
+    // Upload file to storage
+    const filePath = `documents/${data.entityType}/${data.entityId}/${Date.now()}_${data.file.originalname}`;
+    const fileUrl = await this.storageService.uploadFile(filePath, data.file.buffer);
+
+    // Extract metadata
+    const metadata = await this.extractDocumentMetadata(data.file);
+
+    const document = await this.prisma.document.create({
+      data: {
+        userId: data.userId,
+        entityType: data.entityType,
+        entityId: data.entityId,
+        name: data.file.originalname,
+        type: data.file.mimetype,
+        size: data.file.size,
+        filePath,
+        fileUrl,
+        metadata: {
+          ...metadata,
+          uploadedBy: data.userId,
+          uploadedAt: new Date().toISOString(),
+          category: data.category || 'GENERAL',
+          tags: data.tags || [],
+          description: data.description,
+        },
+        status: 'ACTIVE',
+        version: 1,
+      },
+    });
+
+    // Process document if needed
+    if (this.shouldProcessDocument(data.file.mimetype)) {
+      await this.processDocument(document);
+    }
+
+    // Clear cache
+    await this.clearDocumentCaches(data.entityType, data.entityId);
+
+    return document;
+  }
+
+  async extractDocumentMetadata(file) {
+    const metadata = {
+      mimeType: file.mimetype,
+      originalName: file.originalname,
+      size: file.size,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    // Extract text content for searchable documents
+    if (this.isTextExtractable(file.mimetype)) {
+      try {
+        const text = await this.extractTextFromFile(file.buffer, file.mimetype);
+        metadata.textContent = text.substring(0, 10000); // Limit text storage
+        metadata.wordCount = this.countWords(text);
+      } catch (error) {
+        console.error('Failed to extract text:', error);
+      }
+    }
+
+    return metadata;
+  }
+
+  async extractTextFromFile(buffer, mimeType) {
+    if (mimeType === 'application/pdf') {
+      return await this.aiService.extractTextFromPDF(buffer);
+    } else if (mimeType.includes('word') || mimeType === 'application/msword') {
+      return await this.aiService.extractTextFromWord(buffer);
+    } else if (mimeType === 'text/plain') {
+      return buffer.toString('utf-8');
+    } else {
+      throw new Error('Unsupported file type for text extraction');
+    }
+  }
+
+  countWords(text) {
+    return text.split(/\s+/).filter(word => word.length > 0).length;
+  }
+
+  shouldProcessDocument(mimeType) {
+    const processableTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+    ];
+    return processableTypes.includes(mimeType);
+  }
+
+  isTextExtractable(mimeType) {
+    const extractableTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'application/rtf',
+    ];
+    return extractableTypes.includes(mimeType);
+  }
+
+  async processDocument(document) {
+    try {
+      // Analyze document content
+      const analysis = await this.analyzeDocument(document);
+
+      // Update document with analysis results
+      await this.prisma.document.update({
+        where: { id: document.id },
+        data: {
+          metadata: {
+            ...document.metadata,
+            analysis,
+            processedAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      // Index for search
+      await this.indexDocumentForSearch(document, analysis);
+
+    } catch (error) {
+      console.error(`Failed to process document ${document.id}:`, error);
+    }
+  }
+
+  async analyzeDocument(document) {
+    const analysis = {
+      language: 'en',
+      categories: [],
+      entities: [],
+      keywords: [],
+      sentiment: null,
+    };
+
+    if (document.metadata?.textContent) {
+      // Analyze text content
+      const textAnalysis = await this.aiService.analyzeText(document.metadata.textContent);
+      
+      analysis.language = textAnalysis.language;
+      analysis.categories = textAnalysis.categories || [];
+      analysis.entities = textAnalysis.entities || [];
+      analysis.keywords = textAnalysis.keywords || [];
+      analysis.sentiment = textAnalysis.sentiment;
+      analysis.readability = this.calculateReadability(document.metadata.textContent);
+    }
+
+    return analysis;
+  }
+
+  calculateReadability(text) {
+    // Simple readability score (Flesch-Kincaid approximation)
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const words = text.split(/\s+/).filter(w => w.length > 0);
+    const syllables = this.countSyllables(text);
+
+    if (sentences.length === 0 || words.length === 0) {
+      return 0;
+    }
+
+    const score = 206.835 - 
+      1.015 * (words.length / sentences.length) - 
+      84.6 * (syllables / words.length);
+
+    return Math.max(0, Math.min(100, score));
+  }
+
+  countSyllables(text) {
+    // Simplified syllable counting
+    const words = text.toLowerCase().split(/\s+/);
+    let syllableCount = 0;
+
+    words.forEach(word => {
+      word = word.replace(/[^a-z]/g, '');
+      if (word.length <= 3) {
+        syllableCount += 1;
+      } else {
+        const vowelGroups = word.match(/[aeiouy]+/g);
+        syllableCount += vowelGroups ? vowelGroups.length : 1;
+      }
+    });
+
+    return syllableCount;
+  }
+
+  async indexDocumentForSearch(document, analysis) {
+    // Index document in search engine
+    const searchDocument = {
+      id: document.id,
+      entityType: document.entityType,
+      entityId: document.entityId,
+      name: document.name,
+      content: document.metadata?.textContent || '',
+      keywords: analysis.keywords,
+      categories: analysis.categories,
+      uploadedAt: document.createdAt,
+      metadata: document.metadata,
+    };
+
+    // This would typically index in Elasticsearch or similar
+    // await this.searchService.indexDocument('documents', searchDocument);
+  }
+
+  // DOCUMENT RETRIEVAL
+  async getDocument(documentId, userId) {
+    const cacheKey = `document:${documentId}:${userId}`;
+    const cached = await this.redis.get(cacheKey);
+    
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    // Check permissions
+    const hasAccess = await this.checkDocumentAccess(document, userId);
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(document));
+
+    return document;
+  }
+
+  async checkDocumentAccess(document, userId) {
+    // Check if user owns the document
+    if (document.userId === userId) {
+      return true;
+    }
+
+    // Check entity-specific permissions
+    switch (document.entityType) {
+      case 'JOB':
+        const job = await this.prisma.job.findUnique({
+          where: { id: document.entityId },
+          include: { employer: true },
+        });
+        return job?.employer.userId === userId;
+      
+      case 'APPLICATION':
+        const application = await this.prisma.application.findUnique({
+          where: { id: document.entityId },
+          include: {
+            worker: { select: { userId: true } },
+            job: { include: { employer: { select: { userId: true } } } },
+          },
+        });
+        return application?.worker.userId === userId || 
+               application?.job.employer.userId === userId;
+      
+      case 'INTERVIEW':
+        const interview = await this.prisma.interview.findUnique({
+          where: { id: document.entityId },
+          select: { employerId: true, workerId: true },
+        });
+        // Check if user is employer or candidate
+        return false; // Implement based on interview access logic
+      
+      default:
+        return false;
+    }
+  }
+
+  async getEntityDocuments(entityType, entityId, filters = {}) {
+    const cacheKey = this.generateDocumentsCacheKey(entityType, entityId, filters);
+    const cached = await this.redis.get(cacheKey);
+    
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const where = {
+      entityType,
+      entityId,
+      status: 'ACTIVE',
+    };
+
+    if (filters.category) {
+      where.metadata = {
+        path: ['category'],
+        equals: filters.category,
+      };
+    }
+    if (filters.type) {
+      where.type = filters.type;
+    }
+    if (filters.startDate) {
+      where.createdAt = { gte: new Date(filters.startDate) };
+    }
+    if (filters.endDate) {
+      where.createdAt = { lte: new Date(filters.endDate) };
+    }
+    if (filters.search) {
+      where.OR = [
+        { name: { contains: filters.search, mode: 'insensitive' } },
+        {
+          metadata: {
+            path: ['textContent'],
+            string_contains: filters.search,
+          },
+        },
+      ];
+    }
+
+    const [documents, total] = await Promise.all([
+      this.prisma.document.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (filters.page - 1) * (filters.limit || 20),
+        take: filters.limit || 20,
+      }),
+      this.prisma.document.count({ where }),
+    ]);
+
+    const result = {
+      documents,
+      pagination: {
+        page: filters.page || 1,
+        limit: filters.limit || 20,
+        total,
+        pages: Math.ceil(total / (filters.limit || 20)),
+      },
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+
+    return result;
+  }
+
+  async getUserDocuments(userId, filters = {}) {
+    const where = { userId };
+    
+    if (filters.entityType) {
+      where.entityType = filters.entityType;
+    }
+    if (filters.category) {
+      where.metadata = {
+        path: ['category'],
+        equals: filters.category,
+      };
+    }
+    if (filters.startDate) {
+      where.createdAt = { gte: new Date(filters.startDate) };
+    }
+    if (filters.endDate) {
+      where.createdAt = { lte: new Date(filters.endDate) };
+    }
+
+    const documents = await this.prisma.document.findMany({
+      where,
+      include: {
+        entity: {
+          select: {
+            id: true,
+            // Dynamic selection based on entityType
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: filters.limit || 50,
+    });
+
+    return documents;
+  }
+
+  // DOCUMENT OPERATIONS
+  async updateDocument(documentId, userId, updates) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    // Check permissions
+    const hasAccess = await this.checkDocumentAccess(document, userId);
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    const updated = await this.prisma.document.update({
+      where: { id: documentId },
+      data: {
+        ...updates,
+        metadata: {
+          ...document.metadata,
+          ...updates.metadata,
+          updatedAt: new Date().toISOString(),
+          updatedBy: userId,
+        },
+      },
+    });
+
+    // Clear cache
+    await this.clearDocumentCaches(document.entityType, document.entityId);
+
+    return updated;
+  }
+
+  async deleteDocument(documentId, userId) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    // Check permissions
+    const hasAccess = await this.checkDocumentAccess(document, userId);
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    // Soft delete
+    await this.prisma.document.update({
+      where: { id: documentId },
+      data: {
+        status: 'DELETED',
+        deletedAt: new Date(),
+        metadata: {
+          ...document.metadata,
+          deletedBy: userId,
+          deletedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    // Clear cache
+    await this.clearDocumentCaches(document.entityType, document.entityId);
+
+    return { success: true };
+  }
+
+  async restoreDocument(documentId, userId) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    if (document.status !== 'DELETED') {
+      throw new Error('Document is not deleted');
+    }
+
+    // Check permissions
+    const hasAccess = await this.checkDocumentAccess(document, userId);
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    const restored = await this.prisma.document.update({
+      where: { id: documentId },
+      data: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        metadata: {
+          ...document.metadata,
+          restoredBy: userId,
+          restoredAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    // Clear cache
+    await this.clearDocumentCaches(document.entityType, document.entityId);
+
+    return restored;
+  }
+
+  // VERSION MANAGEMENT
+  async createDocumentVersion(documentId, file, userId, changes = {}) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    // Check permissions
+    const hasAccess = await this.checkDocumentAccess(document, userId);
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    // Upload new version
+    const filePath = `documents/${document.entityType}/${document.entityId}/v${document.version + 1}_${file.originalname}`;
+    const fileUrl = await this.storageService.uploadFile(filePath, file.buffer);
+
+    // Create new version
+    const version = await this.prisma.document.create({
+      data: {
+        userId: document.userId,
+        entityType: document.entityType,
+        entityId: document.entityId,
+        name: file.originalname,
+        type: file.mimetype,
+        size: file.size,
+        filePath,
+        fileUrl,
+        metadata: {
+          ...document.metadata,
+          version: document.version + 1,
+          parentId: document.id,
+          changes,
+          createdBy: userId,
+          createdAt: new Date().toISOString(),
+        },
+        status: 'ACTIVE',
+        version: document.version + 1,
+      },
+    });
+
+    // Archive old version
+    await this.prisma.document.update({
+      where: { id: document.id },
+      data: {
+        status: 'ARCHIVED',
+        metadata: {
+          ...document.metadata,
+          archivedAt: new Date().toISOString(),
+          replacedBy: version.id,
+        },
+      },
+    });
+
+    // Clear cache
+    await this.clearDocumentCaches(document.entityType, document.entityId);
+
+    return version;
+  }
+
+  async getDocumentVersions(documentId, userId) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    // Check permissions
+    const hasAccess = await this.checkDocumentAccess(document, userId);
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    const versions = await this.prisma.document.findMany({
+      where: {
+        OR: [
+          { id: documentId },
+          { metadata: { path: ['parentId'], equals: documentId } },
+        ],
+      },
+      orderBy: { version: 'desc' },
+    });
+
+    return versions;
+  }
+
+  // SHARING AND COLLABORATION
+  async shareDocument(documentId, userId, shareData) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    // Check permissions
+    const hasAccess = await this.checkDocumentAccess(document, userId);
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    const share = await this.prisma.documentShare.create({
+      data: {
+        documentId,
+        sharedBy: userId,
+        sharedWith: shareData.userId,
+        permissions: shareData.permissions || ['VIEW'],
+        expiresAt: shareData.expiresAt,
+        metadata: {
+          sharedAt: new Date().toISOString(),
+          message: shareData.message,
+          accessCount: 0,
+        },
+      },
+    });
+
+    // Send notification
+    await this.sendShareNotification(share, document);
+
+    return share;
+  }
+
+  async sendShareNotification(share, document) {
+    // Get user details
+    const sharedWithUser = await this.prisma.user.findUnique({
+      where: { id: share.sharedWith },
+      select: { email: true, firstName: true },
+    });
+
+    if (!sharedWithUser) return;
+
+    // Send email notification
+    await this.emailService.send({
+      to: sharedWithUser.email,
+      subject: 'Document Shared With You',
+      template: 'document-share',
+      data: {
+        firstName: sharedWithUser.firstName,
+        documentName: document.name,
+        sharedBy: share.sharedBy,
+        permissions: share.permissions.join(', '),
+        message: share.metadata?.message,
+      },
+    });
+  }
+
+  async getSharedDocuments(userId, filters = {}) {
+    const shares = await this.prisma.documentShare.findMany({
+      where: {
+        sharedWith: userId,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+      include: {
+        document: true,
+        sharedByUser: {
+          select: {
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return shares;
+  }
+
+  async revokeShare(shareId, userId) {
+    const share = await this.prisma.documentShare.findUnique({
+      where: { id: shareId },
+    });
+
+    if (!share) {
+      throw new Error('Share not found');
+    }
+
+    if (share.sharedBy !== userId) {
+      throw new Error('Only the sharer can revoke access');
+    }
+
+    await this.prisma.documentShare.delete({
+      where: { id: shareId },
+    });
+
+    return { success: true };
+  }
+
+  // SEARCH
+  async searchDocuments(query, filters = {}) {
+    const where = {
+      status: 'ACTIVE',
+      OR: [
+        { name: { contains: query, mode: 'insensitive' } },
+        {
+          metadata: {
+            path: ['textContent'],
+            string_contains: query,
+          },
+        },
+        {
+          metadata: {
+            path: ['keywords'],
+            array_contains: query,
+          },
+        },
+      ],
+    };
+
+    if (filters.entityType) {
+      where.entityType = filters.entityType;
+    }
+    if (filters.entityId) {
+      where.entityId = filters.entityId;
+    }
+    if (filters.userId) {
+      where.userId = filters.userId;
+    }
+    if (filters.category) {
+      where.metadata = {
+        path: ['category'],
+        equals: filters.category,
+      };
+    }
+    if (filters.startDate) {
+      where.createdAt = { gte: new Date(filters.startDate) };
+    }
+    if (filters.endDate) {
+      where.createdAt = { lte: new Date(filters.endDate) };
+    }
+
+    const documents = await this.prisma.document.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: filters.limit || 50,
+    });
+
+    return documents;
+  }
+
+  // ANALYTICS
+  async getDocumentAnalytics(entityType, entityId, period = '30_DAYS') {
+    const startDate = this.getPeriodStartDate(period);
+
+    const [
+      uploadStats,
+      typeDistribution,
+      userActivity,
+      storageUsage,
+    ] = await Promise.all([
+      this.getUploadStats(entityType, entityId, startDate),
+      this.getTypeDistribution(entityType, entityId, startDate),
+      this.getUserActivity(entityType, entityId, startDate),
+      this.getStorageUsage(entityType, entityId),
+    ]);
+
+    return {
+      period,
+      uploadStats,
+      typeDistribution,
+      userActivity,
+      storageUsage,
+      recommendations: this.generateDocumentRecommendations(uploadStats, storageUsage),
+    };
+  }
+
+  async getUploadStats(entityType, entityId, startDate) {
+    const stats = await this.prisma.document.groupBy({
+      by: ['status'],
+      where: {
+        entityType,
+        entityId,
+        createdAt: { gte: startDate },
+      },
+      _count: { id: true },
+      _sum: { size: true },
+    });
+
+    const timeSeries = await this.prisma.$queryRaw`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as count,
+        SUM(size) as total_size
+      FROM documents
+      WHERE entity_type = ${entityType}
+        AND entity_id = ${entityId}
+        AND created_at >= ${startDate}
+      GROUP BY DATE(created_at)
+      ORDER BY date
+    `;
+
+    return {
+      total: stats.reduce((sum, stat) => sum + stat._count.id, 0),
+      byStatus: stats.reduce((acc, stat) => {
+        acc[stat.status] = {
+          count: stat._count.id,
+          totalSize: stat._sum.size,
+        };
+        return acc;
+      }, {}),
+      timeSeries,
+    };
+  }
+
+  async getTypeDistribution(entityType, entityId, startDate) {
+    const distribution = await this.prisma.document.groupBy({
+      by: ['type'],
+      where: {
+        entityType,
+        entityId,
+        createdAt: { gte: startDate },
+      },
+      _count: { id: true },
+      _sum: { size: true },
+    });
+
+    return distribution.map(d => ({
+      type: d.type,
+      count: d._count.id,
+      totalSize: d._sum.size,
+    }));
+  }
+
+  async getUserActivity(entityType, entityId, startDate) {
+    const activity = await this.prisma.document.groupBy({
+      by: ['userId'],
+      where: {
+        entityType,
+        entityId,
+        createdAt: { gte: startDate },
+      },
+      _count: { id: true },
+      _sum: { size: true },
+      _max: { createdAt: true },
+    });
+
+    // Get user details
+    const enriched = await Promise.all(
+      activity.map(async (act) => {
+        const user = await this.prisma.user.findUnique({
+          where: { id: act.userId },
+          select: {
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        });
+
+        return {
+          userId: act.userId,
+          name: user ? `${user.firstName} ${user.lastName}` : 'Unknown',
+          avatar: user?.avatar,
+          documentCount: act._count.id,
+          totalSize: act._sum.size,
+          lastActivity: act._max.createdAt,
+        };
+      })
+    );
+
+    return enriched.sort((a, b) => b.documentCount - a.documentCount);
+  }
+
+  async getStorageUsage(entityType, entityId) {
+    const result = await this.prisma.document.aggregate({
+      where: {
+        entityType,
+        entityId,
+        status: 'ACTIVE',
+      },
+      _sum: { size: true },
+      _count: { id: true },
+    });
+
+    const totalSize = result._sum.size || 0;
+    const documentCount = result._count.id || 0;
+
+    // Calculate storage quotas (example: 1GB limit)
+    const storageLimit = 1024 * 1024 * 1024; // 1GB in bytes
+    const usagePercentage = (totalSize / storageLimit) * 100;
+
+    return {
+      totalSize,
+      documentCount,
+      storageLimit,
+      usagePercentage,
+      availableSpace: Math.max(0, storageLimit - totalSize),
+    };
+  }
+
+  generateDocumentRecommendations(uploadStats, storageUsage) {
+    const recommendations = [];
+
+    if (storageUsage.usagePercentage > 90) {
+      recommendations.push({
+        type: 'STORAGE_LIMIT',
+        priority: 'HIGH',
+        title: 'Storage Limit Approaching',
+        message: `Storage usage is at ${storageUsage.usagePercentage.toFixed(1)}%`,
+        actions: [
+          'Archive old documents',
+          'Delete unnecessary files',
+          'Consider upgrading storage plan',
+        ],
+      });
+    }
+
+    if (uploadStats.byStatus?.DELETED?.count > uploadStats.total * 0.3) {
+      recommendations.push({
+        type: 'HIGH_DELETION_RATE',
+        priority: 'MEDIUM',
+        title: 'High Document Deletion Rate',
+        message: `${uploadStats.byStatus.DELETED.count} documents deleted (${((uploadStats.byStatus.DELETED.count / uploadStats.total) * 100).toFixed(1)}%)`,
+        actions: [
+          'Review document retention policies',
+          'Implement document recovery system',
+          'Train users on proper document management',
+        ],
+      });
+    }
+
+    return recommendations;
+  }
+
+  // CACHE MANAGEMENT
+  generateDocumentsCacheKey(entityType, entityId, filters) {
+    const filterStr = JSON.stringify(filters);
+    return `documents:${entityType}:${entityId}:${Buffer.from(filterStr).toString('base64')}`;
+  }
+
+  async clearDocumentCaches(entityType, entityId) {
+    const patterns = [
+      `documents:${entityType}:${entityId}:*`,
+      `document:*:${entityId}`,
+    ];
+
+    for (const pattern of patterns) {
+      const keys = await this.redis.keys(pattern);
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+    }
+  }
+
+  // HELPER METHODS
+  getPeriodStartDate(period) {
+    const now = new Date();
+    switch (period) {
+      case '7_DAYS':
+        return new Date(now.setDate(now.getDate() - 7));
+      case '30_DAYS':
+        return new Date(now.setDate(now.getDate() - 30));
+      case '90_DAYS':
+        return new Date(now.setDate(now.getDate() - 90));
+      default:
+        return new Date(now.setDate(now.getDate() - 30));
+    }
+  }
+}
+
+module.exports = DocumentRepository;
