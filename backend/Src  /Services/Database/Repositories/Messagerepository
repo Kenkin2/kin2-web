@@ -1,0 +1,790 @@
+class MessageRepository {
+  constructor(prisma, redis, websocketService) {
+    this.prisma = prisma;
+    this.redis = redis;
+    this.websocketService = websocketService;
+    this.CACHE_TTL = 600; // 10 minutes
+  }
+
+  // CONVERSATION MANAGEMENT
+  async createConversation(participantIds, type = 'DIRECT', metadata = {}) {
+    // Check if conversation already exists
+    const existing = await this.findConversation(participantIds, type);
+    if (existing) {
+      return existing;
+    }
+
+    const conversation = await this.prisma.conversation.create({
+      data: {
+        type,
+        metadata: {
+          ...metadata,
+          createdBy: participantIds[0],
+          createdAt: new Date().toISOString(),
+          lastActivity: new Date().toISOString(),
+        },
+        participants: {
+          create: participantIds.map(userId => ({
+            userId,
+            joinedAt: new Date(),
+            role: userId === participantIds[0] ? 'ADMIN' : 'MEMBER',
+          })),
+        },
+      },
+      include: {
+        participants: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Notify participants
+    this.notifyConversationCreated(conversation);
+
+    return conversation;
+  }
+
+  async findConversation(participantIds, type) {
+    const conversations = await this.prisma.conversation.findMany({
+      where: {
+        type,
+        participants: {
+          every: {
+            userId: { in: participantIds },
+          },
+        },
+      },
+      include: {
+        participants: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    // Find exact match
+    return conversations.find(conv => 
+      conv.participants.length === participantIds.length &&
+      participantIds.every(id => 
+        conv.participants.some(p => p.userId === id)
+      )
+    );
+  }
+
+  async getConversation(conversationId, userId) {
+    const cacheKey = `conversation:${conversationId}:${userId}`;
+    const cached = await this.redis.get(cacheKey);
+    
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        participants: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+                metadata: true,
+              },
+            },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          take: 50,
+          include: {
+            sender: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            messages: true,
+            participants: true,
+          },
+        },
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // Check if user is a participant
+    const isParticipant = conversation.participants.some(p => p.userId === userId);
+    if (!isParticipant) {
+      throw new Error('Access denied');
+    }
+
+    // Mark messages as read
+    await this.markMessagesAsRead(conversationId, userId);
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(conversation));
+
+    return conversation;
+  }
+
+  async getUserConversations(userId, filters = {}) {
+    const cacheKey = this.generateConversationsCacheKey(userId, filters);
+    const cached = await this.redis.get(cacheKey);
+    
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const where = {
+      participants: {
+        some: { userId },
+      },
+    };
+
+    if (filters.type) {
+      where.type = filters.type;
+    }
+    if (filters.search) {
+      where.messages = {
+        some: {
+          content: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+      };
+    }
+
+    const conversations = await this.prisma.conversation.findMany({
+      where,
+      include: {
+        participants: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: {
+            sender: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            messages: {
+              where: {
+                readBy: {
+                  none: {
+                    userId,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    // Format response
+    const formatted = conversations.map(conv => ({
+      id: conv.id,
+      type: conv.type,
+      participants: conv.participants,
+      lastMessage: conv.messages[0] || null,
+      unreadCount: conv._count.messages,
+      updatedAt: conv.updatedAt,
+      metadata: conv.metadata,
+    }));
+
+    const result = {
+      conversations: formatted,
+      totalUnread: formatted.reduce((sum, conv) => sum + conv.unreadCount, 0),
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+
+    return result;
+  }
+
+  async addParticipant(conversationId, userId, addedBy) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        participants: true,
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // Check if user is already a participant
+    const existing = conversation.participants.find(p => p.userId === userId);
+    if (existing) {
+      return existing;
+    }
+
+    // Add participant
+    const participant = await this.prisma.conversationParticipant.create({
+      data: {
+        conversationId,
+        userId,
+        joinedAt: new Date(),
+        role: 'MEMBER',
+      },
+    });
+
+    // Send system message
+    await this.sendMessage({
+      conversationId,
+      senderId: addedBy,
+      content: 'added a participant',
+      type: 'SYSTEM',
+    });
+
+    // Clear cache
+    await this.clearConversationCaches(conversationId);
+
+    return participant;
+  }
+
+  async removeParticipant(conversationId, userId, removedBy) {
+    const participant = await this.prisma.conversationParticipant.findFirst({
+      where: {
+        conversationId,
+        userId,
+      },
+    });
+
+    if (!participant) {
+      throw new Error('Participant not found');
+    }
+
+    // Cannot remove yourself in direct messages
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+
+    if (conversation.type === 'DIRECT') {
+      throw new Error('Cannot remove participants from direct messages');
+    }
+
+    await this.prisma.conversationParticipant.delete({
+      where: { id: participant.id },
+    });
+
+    // Send system message
+    await this.sendMessage({
+      conversationId,
+      senderId: removedBy,
+      content: 'removed a participant',
+      type: 'SYSTEM',
+    });
+
+    // Clear cache
+    await this.clearConversationCaches(conversationId);
+  }
+
+  // MESSAGE MANAGEMENT
+  async sendMessage(data) {
+    const message = await this.prisma.message.create({
+      data: {
+        conversationId: data.conversationId,
+        senderId: data.senderId,
+        content: data.content,
+        type: data.type || 'TEXT',
+        metadata: {
+          ...data.metadata,
+          sentAt: new Date().toISOString(),
+          attachments: data.attachments || [],
+          repliedTo: data.repliedTo,
+        },
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    // Update conversation last activity
+    await this.prisma.conversation.update({
+      where: { id: data.conversationId },
+      data: {
+        updatedAt: new Date(),
+        metadata: {
+          update: {
+            path: ['lastActivity'],
+            value: new Date().toISOString(),
+          },
+        },
+      },
+    });
+
+    // Mark as read by sender
+    await this.prisma.messageRead.create({
+      data: {
+        messageId: message.id,
+        userId: data.senderId,
+        readAt: new Date(),
+      },
+    });
+
+    // Send real-time notification
+    await this.sendRealTimeMessage(message);
+
+    // Clear cache
+    await this.clearConversationCaches(data.conversationId);
+
+    return message;
+  }
+
+  async sendRealTimeMessage(message) {
+    // Get conversation participants
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: message.conversationId },
+      include: {
+        participants: {
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (!conversation) return;
+
+    // Send to all participants except sender
+    conversation.participants.forEach(participant => {
+      if (participant.userId !== message.senderId) {
+        this.websocketService.sendToUser(participant.userId, {
+          type: 'NEW_MESSAGE',
+          data: message,
+        });
+      }
+    });
+  }
+
+  async getMessages(conversationId, userId, filters = {}) {
+    const cacheKey = this.generateMessagesCacheKey(conversationId, filters);
+    const cached = await this.redis.get(cacheKey);
+    
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    // Verify user is participant
+    const participant = await this.prisma.conversationParticipant.findFirst({
+      where: {
+        conversationId,
+        userId,
+      },
+    });
+
+    if (!participant) {
+      throw new Error('Access denied');
+    }
+
+    const where = { conversationId };
+
+    if (filters.before) {
+      where.createdAt = { lt: new Date(filters.before) };
+    }
+    if (filters.after) {
+      where.createdAt = { gt: new Date(filters.after) };
+    }
+    if (filters.senderId) {
+      where.senderId = filters.senderId;
+    }
+    if (filters.type) {
+      where.type = filters.type;
+    }
+
+    const [messages, total] = await Promise.all([
+      this.prisma.message.findMany({
+        where,
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+          readBy: {
+            select: {
+              userId: true,
+              readAt: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (filters.page - 1) * (filters.limit || 50),
+        take: filters.limit || 50,
+      }),
+      this.prisma.message.count({ where }),
+    ]);
+
+    // Mark messages as read
+    const unreadMessages = messages.filter(msg => 
+      !msg.readBy.some(r => r.userId === userId)
+    );
+
+    if (unreadMessages.length > 0) {
+      await this.markMessagesAsRead(conversationId, userId);
+    }
+
+    const result = {
+      messages: messages.reverse(), // Return in chronological order
+      pagination: {
+        page: filters.page || 1,
+        limit: filters.limit || 50,
+        total,
+        pages: Math.ceil(total / (filters.limit || 50)),
+      },
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+
+    return result;
+  }
+
+  async markMessagesAsRead(conversationId, userId) {
+    // Find unread messages
+    const unreadMessages = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        NOT: {
+          readBy: {
+            some: { userId },
+          },
+        },
+        senderId: { not: userId }, // Don't mark own messages as read
+      },
+      select: { id: true },
+    });
+
+    if (unreadMessages.length === 0) return;
+
+    // Create read records
+    const readRecords = unreadMessages.map(msg => ({
+      messageId: msg.id,
+      userId,
+      readAt: new Date(),
+    }));
+
+    await this.prisma.messageRead.createMany({
+      data: readRecords,
+    });
+
+    // Clear cache
+    await this.clearConversationCaches(conversationId);
+
+    // Notify other participants
+    this.notifyMessagesRead(conversationId, userId, unreadMessages.length);
+  }
+
+  async notifyMessagesRead(conversationId, userId, count) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        participants: {
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (!conversation) return;
+
+    // Notify other participants
+    conversation.participants.forEach(participant => {
+      if (participant.userId !== userId) {
+        this.websocketService.sendToUser(participant.userId, {
+          type: 'MESSAGES_READ',
+          data: {
+            conversationId,
+            userId,
+            count,
+          },
+        });
+      }
+    });
+  }
+
+  async deleteMessage(messageId, userId) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: {
+        sender: true,
+      },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    // Check permissions
+    if (message.senderId !== userId) {
+      throw new Error('Only sender can delete message');
+    }
+
+    // Soft delete (update metadata)
+    const deleted = await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        content: 'This message was deleted',
+        metadata: {
+          ...message.metadata,
+          deleted: true,
+          deletedAt: new Date().toISOString(),
+          deletedBy: userId,
+          originalContent: message.content,
+        },
+      },
+    });
+
+    // Clear cache
+    await this.clearConversationCaches(message.conversationId);
+
+    // Notify participants
+    this.notifyMessageDeleted(message.conversationId, messageId);
+
+    return deleted;
+  }
+
+  notifyMessageDeleted(conversationId, messageId) {
+    // Get conversation participants
+    this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        participants: {
+          select: { userId: true },
+        },
+      },
+    }).then(conversation => {
+      if (!conversation) return;
+
+      conversation.participants.forEach(participant => {
+        this.websocketService.sendToUser(participant.userId, {
+          type: 'MESSAGE_DELETED',
+          data: {
+            conversationId,
+            messageId,
+          },
+        });
+      });
+    });
+  }
+
+  // ATTACHMENTS
+  async uploadAttachment(conversationId, userId, file, metadata = {}) {
+    // Verify user is participant
+    const participant = await this.prisma.conversationParticipant.findFirst({
+      where: {
+        conversationId,
+        userId,
+      },
+    });
+
+    if (!participant) {
+      throw new Error('Access denied');
+    }
+
+    // Save file (implementation depends on storage service)
+    const filePath = `attachments/${conversationId}/${Date.now()}_${file.originalname}`;
+    const fileUrl = await this.saveFile(filePath, file.buffer);
+
+    const attachment = {
+      name: file.originalname,
+      url: fileUrl,
+      type: file.mimetype,
+      size: file.size,
+      uploadedBy: userId,
+      uploadedAt: new Date().toISOString(),
+      ...metadata,
+    };
+
+    return attachment;
+  }
+
+  async saveFile(path, buffer) {
+    // Implement file saving logic
+    // This would typically use a cloud storage service
+    throw new Error('File saving not implemented');
+  }
+
+  // SEARCH
+  async searchMessages(userId, query, filters = {}) {
+    const where = {
+      content: {
+        contains: query,
+        mode: 'insensitive',
+      },
+    };
+
+    if (filters.conversationId) {
+      where.conversationId = filters.conversationId;
+    }
+    if (filters.senderId) {
+      where.senderId = filters.senderId;
+    }
+    if (filters.startDate) {
+      where.createdAt = { gte: new Date(filters.startDate) };
+    }
+    if (filters.endDate) {
+      where.createdAt = { lte: new Date(filters.endDate) };
+    }
+
+    // Only search in conversations user is part of
+    const userConversations = await this.prisma.conversationParticipant.findMany({
+      where: { userId },
+      select: { conversationId: true },
+    });
+
+    const conversationIds = userConversations.map(uc => uc.conversationId);
+    where.conversationId = { in: conversationIds };
+
+    const messages = await this.prisma.message.findMany({
+      where,
+      include: {
+        sender: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
+        conversation: {
+          include: {
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: filters.limit || 50,
+    });
+
+    return messages;
+  }
+
+  // NOTIFICATIONS
+  async notifyConversationCreated(conversation) {
+    conversation.participants.forEach(participant => {
+      if (participant.userId !== conversation.metadata?.createdBy) {
+        this.websocketService.sendToUser(participant.userId, {
+          type: 'CONVERSATION_CREATED',
+          data: conversation,
+        });
+      }
+    });
+  }
+
+  // CACHE MANAGEMENT
+  generateConversationsCacheKey(userId, filters) {
+    const filterStr = JSON.stringify(filters);
+    return `conversations:${userId}:${Buffer.from(filterStr).toString('base64')}`;
+  }
+
+  generateMessagesCacheKey(conversationId, filters) {
+    const filterStr = JSON.stringify(filters);
+    return `messages:${conversationId}:${Buffer.from(filterStr).toString('base64')}`;
+  }
+
+  async clearConversationCaches(conversationId) {
+    const patterns = [
+      `conversation:${conversationId}:*`,
+      `messages:${conversationId}:*`,
+    ];
+
+    for (const pattern of patterns) {
+      const keys = await this.redis.keys(pattern);
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+    }
+
+    // Also clear user conversations cache
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        participants: {
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (conversation) {
+      conversation.participants.forEach(async participant => {
+        const pattern = `conversations:${participant.userId}:*`;
+        const keys = await this.redis.keys(pattern);
+        if (keys.length > 0) {
+          await this.redis.del(...keys);
+        }
+      });
+    }
+  }
+}
+
+module.exports = MessageRepository;
