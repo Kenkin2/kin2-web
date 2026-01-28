@@ -1,4 +1,511 @@
-#!/usr/bin/env node
+#!/usr/bin/enconst express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
+const compression = require('compression');
+const path = require('path');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+
+// Import error handling and logging
+const createLogger = require('./src/utils/logger');
+const {
+  errorHandler,
+  notFoundHandler,
+  errorReportingMiddleware,
+  asyncHandler,
+  RateLimitError,
+} = require('./src/middleware/errorHandler');
+
+// Initialize logger with configuration
+const logger = createLogger({
+  appName: 'Kin2Workforce',
+  appVersion: process.env.npm_package_version || '1.0.0',
+  environment: process.env.NODE_ENV || 'development',
+  logDir: './logs',
+  elasticsearch: {
+    node: process.env.ELASTICSEARCH_URL,
+  },
+  loki: {
+    host: process.env.LOKI_URL,
+  },
+  redactFields: [
+    'password',
+    'token',
+    'secret',
+    'authorization',
+    'creditCard',
+    'ssn',
+    'cvv',
+    'apiKey',
+    'privateKey',
+    'refreshToken',
+    'accessToken',
+  ],
+});
+
+const app = express();
+
+// ======================
+// SECURITY MIDDLEWARE
+// ======================
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
+      connectSrc: ["'self'", process.env.API_URL || 'http://localhost:3000', 'https://*.deepseek.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      frameSrc: ["'self'", 'https://js.stripe.com'],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.FRONTEND_URL 
+    ? process.env.FRONTEND_URL.split(',') 
+    : ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Request-ID', 
+    'X-Correlation-ID',
+    'X-API-Key',
+    'Stripe-Signature'
+  ],
+  exposedHeaders: ['X-Request-ID', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+  maxAge: 86400, // 24 hours
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Preflight requests
+
+// ======================
+// RATE LIMITING
+// ======================
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // requests per window
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  keyGenerator: (req) => {
+    return req.ip; // Use IP for rate limiting
+  },
+  handler: (req, res, next) => {
+    next(new RateLimitError('Too many requests. Please try again later.', 60)); // 60 seconds retry
+  },
+  skip: (req) => {
+    // Skip rate limiting for health checks and internal IPs
+    return req.path === '/health' || req.ip === '::1' || req.ip === '127.0.0.1';
+  },
+});
+
+// Apply rate limiting to API routes
+app.use('/api', limiter);
+
+// Stricter rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // Only 10 requests per window for auth
+  message: 'Too many authentication attempts. Please try again later.',
+  skipSuccessfulRequests: false,
+});
+
+app.use('/api/auth', authLimiter);
+
+// ======================
+// BODY PARSING & COOKIES
+// ======================
+app.use(express.json({ 
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf; // For Stripe webhook verification
+  }
+}));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '10mb' 
+}));
+app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-here'));
+
+// ======================
+// COMPRESSION
+// ======================
+app.use(compression({
+  level: 6,
+  threshold: 1024, // Only compress responses > 1KB
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
+
+// ======================
+// REQUEST LOGGING & MONITORING
+// ======================
+app.use(logger.requestLogger);
+app.use(errorReportingMiddleware);
+
+// Performance monitoring for all routes
+const performanceThreshold = process.env.NODE_ENV === 'production' ? 500 : 1000;
+app.use(logger.performanceLogger(performanceThreshold));
+
+// Morgan HTTP logging (development only)
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev', { 
+    stream: { 
+      write: (msg) => logger.info(msg.trim(), { source: 'morgan' }) 
+    } 
+  }));
+}
+
+// ======================
+// DATABASE CONNECTION
+// ======================
+const connectDatabase = async () => {
+  try {
+    // Your database connection logic here (Prisma, Mongoose, etc.)
+    logger.info('Database connection established');
+  } catch (error) {
+    logger.error('Database connection failed', {
+      error: logger.formatError(error),
+      retryCount: 1,
+    });
+    
+    // Retry logic or exit
+    setTimeout(connectDatabase, 5000);
+  }
+};
+
+// ======================
+// APPLICATION ROUTES
+// ======================
+
+// Import routes
+const authRoutes = require('./src/routes/auth');
+const jobRoutes = require('./src/routes/jobs');
+const paymentRoutes = require('./src/routes/payments');
+const adminRoutes = require('./src/routes/admin');
+const workforceRoutes = require('./src/routes/workforce');
+const aiRoutes = require('./src/routes/ai');
+
+// API Routes with versioning
+const API_PREFIX = '/api/v1';
+
+// Public routes (no authentication required)
+app.use(`${API_PREFIX}/auth`, authRoutes);
+app.use(`${API_PREFIX}/health`, require('./src/routes/health'));
+
+// Protected routes (require authentication)
+app.use(`${API_PREFIX}/jobs`, jobRoutes);
+app.use(`${API_PREFIX}/payments`, paymentRoutes);
+app.use(`${API_PREFIX}/admin`, adminRoutes);
+app.use(`${API_PREFIX}/workforce`, workforceRoutes);
+app.use(`${API_PREFIX}/ai`, aiRoutes);
+
+// ======================
+// HEALTH CHECK ENDPOINT
+// ======================
+app.get('/health', asyncHandler(async (req, res) => {
+  const healthChecks = {
+    service: 'Kin2 Workforce Platform',
+    timestamp: new Date().toISOString(),
+    status: 'healthy',
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV,
+    version: process.env.npm_package_version || '1.0.0',
+    requestId: req.requestId,
+    checks: {},
+  };
+  
+  // Database health check
+  try {
+    // Example with Prisma
+    // await prisma.$queryRaw`SELECT 1`;
+    healthChecks.checks.database = { 
+      status: 'healthy', 
+      timestamp: new Date().toISOString(),
+      responseTime: '0ms' 
+    };
+  } catch (error) {
+    healthChecks.checks.database = { 
+      status: 'unhealthy', 
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    };
+    healthChecks.status = 'degraded';
+  }
+  
+  // Redis/Cache health check
+  try {
+    // Example with Redis
+    // await redis.ping();
+    healthChecks.checks.cache = { 
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    healthChecks.checks.cache = { 
+      status: 'unhealthy', 
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    };
+    healthChecks.status = 'degraded';
+  }
+  
+  // External service checks
+  try {
+    // Check Stripe connectivity
+    healthChecks.checks.stripe = { 
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    healthChecks.checks.stripe = { 
+      status: 'unhealthy', 
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    };
+    healthChecks.status = 'degraded';
+  }
+  
+  // System metrics
+  healthChecks.system = {
+    memory: process.memoryUsage(),
+    cpu: process.cpuUsage(),
+    platform: process.platform,
+    nodeVersion: process.version,
+  };
+  
+  logger.info('Health check completed', {
+    requestId: req.requestId,
+    status: healthChecks.status,
+    responseTime: `${Date.now() - req._startTime}ms`,
+  });
+  
+  const statusCode = healthChecks.status === 'healthy' ? 200 : 
+                     healthChecks.status === 'degraded' ? 206 : 503;
+  
+  res.status(statusCode).json(healthChecks);
+}));
+
+// ======================
+// STATIC FILE SERVING
+// ======================
+if (process.env.NODE_ENV === 'production') {
+  // Serve frontend static files
+  app.use(express.static(path.join(__dirname, '../frontend/dist'), {
+    maxAge: '1y',
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, path) => {
+      if (path.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    },
+  }));
+  
+  // Handle SPA routing
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  });
+} else {
+  // Development static files
+  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+}
+
+// ======================
+// ERROR HANDLING CHAIN
+// ======================
+
+// 404 handler - must be before error handler
+app.use(notFoundHandler);
+
+// Error logger middleware
+app.use(logger.errorLogger);
+
+// Global error handler - MUST BE LAST
+app.use(errorHandler);
+
+// ======================
+// SERVER STARTUP
+// ======================
+
+// Initialize database connection
+connectDatabase();
+
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
+
+const server = app.listen(PORT, HOST, () => {
+  logger.info(`🚀 Server started successfully`, {
+    environment: process.env.NODE_ENV,
+    port: PORT,
+    host: HOST,
+    url: `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`,
+    pid: process.pid,
+    nodeVersion: process.version,
+  });
+});
+
+// ======================
+// PROCESS EVENT HANDLERS
+// ======================
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Promise Rejection', {
+    reason: logger.formatError(reason),
+    promise: promise.toString(),
+    timestamp: new Date().toISOString(),
+    pid: process.pid,
+  });
+  
+  // In production, you might want to exit the process
+  if (process.env.NODE_ENV === 'production') {
+    // Attempt graceful shutdown
+    gracefulShutdown();
+  }
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception - CRITICAL', {
+    error: logger.formatError(error),
+    timestamp: new Date().toISOString(),
+    pid: process.pid,
+  });
+  
+  // Exit the process as the application is in an unknown state
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
+// Handle SIGTERM for graceful shutdown in Kubernetes/Docker
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, starting graceful shutdown');
+  gracefulShutdown();
+});
+
+// Handle SIGINT for Ctrl+C
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, starting graceful shutdown');
+  gracefulShutdown();
+});
+
+// ======================
+// GRACEFUL SHUTDOWN
+// ======================
+const gracefulShutdown = async (signal = 'manual') => {
+  logger.info('Starting graceful shutdown', { signal, pid: process.pid });
+  
+  // Set shutdown flag
+  app.locals.isShuttingDown = true;
+  
+  // Stop accepting new connections
+  server.close(async (err) => {
+    if (err) {
+      logger.error('Error closing HTTP server', {
+        error: logger.formatError(err),
+        signal,
+      });
+      process.exit(1);
+    }
+    
+    logger.info('HTTP server closed');
+    
+    try {
+      // Close database connections
+      // Example with Prisma:
+      // await prisma.$disconnect();
+      logger.info('Database connections closed');
+      
+      // Close Redis connections
+      // await redis.quit();
+      logger.info('Cache connections closed');
+      
+      // Flush logs if supported
+      if (logger.flush && typeof logger.flush === 'function') {
+        await logger.flush();
+        logger.info('Logs flushed to external services');
+      }
+      
+      // Close logger transports
+      if (logger.close && typeof logger.close === 'function') {
+        await logger.close();
+        logger.info('Logger transports closed');
+      }
+      
+      logger.info('Graceful shutdown completed successfully');
+      process.exit(0);
+    } catch (error) {
+      logger.error('Error during graceful shutdown', { 
+        error: logger.formatError(error),
+        signal,
+      });
+      process.exit(1);
+    }
+  });
+  
+  // Force shutdown after timeout
+  const forceShutdownTimeout = setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 30000); // 30 seconds timeout
+  
+  // Clear timeout if shutdown completes
+  server.on('close', () => {
+    clearTimeout(forceShutdownTimeout);
+  });
+};
+
+// ======================
+// READINESS & LIVENESS
+// ======================
+let isReady = false;
+
+// Simple readiness check
+app.get('/ready', (req, res) => {
+  if (isReady && !app.locals.isShuttingDown) {
+    res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+  } else {
+    res.status(503).json({ status: 'not ready', timestamp: new Date().toISOString() });
+  }
+});
+
+// Simple liveness check
+app.get('/live', (req, res) => {
+  res.status(200).json({ status: 'alive', timestamp: new Date().toISOString() });
+});
+
+// Mark as ready after startup
+setTimeout(() => {
+  isReady = true;
+  logger.info('Application is now ready to accept traffic');
+}, 2000);
+
+// ======================
+// EXPORTS
+// ======================
+module.exports = { 
+  app, 
+  logger,
+  server,
+  gracefulShutdown,
+};v node
 
 /**
  * █▀▀ █░█ █▄░█ █▀▀ ░░█ █▀ ▀█▀ █▀▀ █▀█ █ █▄░█ █▀▀
